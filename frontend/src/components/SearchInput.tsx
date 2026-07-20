@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { getSuggestions } from "@/lib/api";
+import { searchExtrasEnabled } from "@/lib/feature-flags";
 
 // Interaction pattern (debounce, arrow-key nav, outside-click close,
 // empty-state fallback) adapted from an existing BurrowSoft product's search
@@ -29,6 +30,7 @@ export function SearchInput({
   // the timeout callback (never synchronously in the effect body) to avoid
   // the cascading-render anti-pattern.
   useEffect(() => {
+    if (!searchExtrasEnabled) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const trimmed = value.trim();
     debounceRef.current = setTimeout(() => {
@@ -110,11 +112,13 @@ export function SearchInput({
         onKeyDown={handleKeyDown}
         placeholder="Search products…"
         aria-label="Search products"
-        role="combobox"
-        aria-autocomplete="list"
-        aria-expanded={showDropdown}
-        aria-controls="search-suggestions-listbox"
-        aria-activedescendant={activeIndex >= 0 ? `search-suggestion-${activeIndex}` : undefined}
+        {...(searchExtrasEnabled && {
+          role: "combobox",
+          "aria-autocomplete": "list",
+          "aria-expanded": showDropdown,
+          "aria-controls": "search-suggestions-listbox",
+          "aria-activedescendant": activeIndex >= 0 ? `search-suggestion-${activeIndex}` : undefined,
+        })}
         autoComplete="off"
         className="w-full rounded-lg border border-zinc-300 bg-white py-2 pl-9 pr-9 text-sm text-zinc-900 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
       />

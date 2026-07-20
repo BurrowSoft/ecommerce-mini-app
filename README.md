@@ -267,6 +267,19 @@ account lockout after repeated failed logins. Both are reasonable production har
 but scored lower than the four extras above against this submission's actual grading
 criteria, so they were left out rather than half-implemented.
 
+### Feature flag
+
+The three *visible* extras — autocomplete suggestions, search relevance highlighting, and
+skeleton loading states — are gated behind a single flag,
+`NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS`, **defaulting to `true`** (any value other than the
+literal string `"false"` counts as enabled; see `.env.example`). Set it to `false` and
+restart the frontend to run with the original, pre-extras UI: a plain search input with no
+dropdown or highlighting, and `"Loading…"` text instead of skeleton cards.
+
+CSRF protection is deliberately **not** behind this flag. It's a security fix, not a UX
+toggle — shipping a build where it can be switched off would be a regression, not a demo
+convenience — so it stays enabled unconditionally regardless of this setting.
+
 ## Credits
 
 The search input's interaction pattern (debounce, clear button, focus ring, and — for the
