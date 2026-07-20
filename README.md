@@ -267,6 +267,29 @@ account lockout after repeated failed logins. Both are reasonable production har
 but scored lower than the four extras above against this submission's actual grading
 criteria, so they were left out rather than half-implemented.
 
+### Feature flag
+
+The three *visible* extras — autocomplete suggestions, search relevance highlighting, and
+skeleton loading states — are gated behind a single flag,
+`NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS`, **defaulting to `true`** (any value other than the
+literal string `"false"` counts as enabled; see `.env.example`). Disabled, the app falls
+back to the original, pre-extras UI: a plain search input with no dropdown or highlighting,
+and `"Loading…"` text instead of skeleton cards.
+
+**How to disable it depends on how you're running the app**, because `NEXT_PUBLIC_*`
+values are inlined into the client bundle at build time, not read at runtime (same caveat
+as `NEXT_PUBLIC_API_URL` above):
+
+- **Local dev server** (`npm run dev`): set `NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS=false` and
+  restart — picked up immediately, no rebuild needed.
+- **Docker Compose**: set it in `.env`, then `docker compose up --build` (a plain `up`
+  without `--build` reuses the already-built image and won't see the change) —
+  `docker-compose.yml` passes it through as a build arg to `frontend/Dockerfile`.
+
+CSRF protection is deliberately **not** behind this flag. It's a security fix, not a UX
+toggle — shipping a build where it can be switched off would be a regression, not a demo
+convenience — so it stays enabled unconditionally regardless of this setting.
+
 ## Credits
 
 The search input's interaction pattern (debounce, clear button, focus ring, and — for the
