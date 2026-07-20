@@ -116,4 +116,32 @@ describe('LoginRateLimiterService', () => {
       true,
     );
   });
+
+  it('evicts stale keys via periodic sweep, bounding memory regardless of how many distinct keys were ever seen', () => {
+    jest.useFakeTimers();
+    try {
+      const limiter = makeLimiter({
+        ipMax: 100,
+        ipWindowSeconds: 1,
+        accountMax: 100,
+        accountWindowSeconds: 1,
+      });
+      const hitsByKey = () =>
+        (limiter as unknown as { hitsByKey: Map<string, number[]> }).hitsByKey;
+
+      // Simulate an attacker (or just heavy traffic) rotating through many
+      // one-off IPs/emails — each used only once.
+      for (let i = 0; i < 50; i++) {
+        limiter.checkAndRecord(`10.0.0.${i}`, `user${i}@example.com`);
+      }
+      expect(hitsByKey().size).toBeGreaterThan(0);
+
+      // Advance past both the 1s window and the 5-minute sweep interval.
+      jest.advanceTimersByTime(5 * 60 * 1000 + 2000);
+
+      expect(hitsByKey().size).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });
