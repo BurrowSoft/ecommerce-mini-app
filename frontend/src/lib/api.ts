@@ -103,3 +103,10 @@ export function getProducts(params: GetProductsParams): Promise<ProductListRespo
 
   return apiFetch<ProductListResponse>(`/products?${search.toString()}`);
 }
+
+export async function getSuggestions(q: string): Promise<string[]> {
+  const res = await apiFetch<{ suggestions: string[] }>(
+    `/products/suggest?q=${encodeURIComponent(q)}`,
+  );
+  return res.suggestions;
+}
