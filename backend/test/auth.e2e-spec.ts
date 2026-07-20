@@ -113,6 +113,8 @@ describe('Auth rate limiting (e2e)', () => {
   // in-memory rate-limit state with the functional tests above.
   let app: INestApplication<App>;
   let sessionPool: Pool;
+  const originalAccountMax = process.env.LOGIN_RATE_LIMIT_PER_ACCOUNT_MAX;
+  const originalAccountWindow = process.env.LOGIN_RATE_LIMIT_PER_ACCOUNT_WINDOW_SECONDS;
 
   beforeAll(async () => {
     process.env.LOGIN_RATE_LIMIT_PER_ACCOUNT_MAX = '3';
@@ -123,6 +125,10 @@ describe('Auth rate limiting (e2e)', () => {
   afterAll(async () => {
     await app.close();
     await sessionPool.end();
+    // Restore so these overrides don't leak into any test file that runs
+    // after this one in the same worker process.
+    process.env.LOGIN_RATE_LIMIT_PER_ACCOUNT_MAX = originalAccountMax;
+    process.env.LOGIN_RATE_LIMIT_PER_ACCOUNT_WINDOW_SECONDS = originalAccountWindow;
   });
 
   it('blocks after exceeding the per-account attempt limit, with a Retry-After header', async () => {
