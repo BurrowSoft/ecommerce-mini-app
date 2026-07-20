@@ -1,96 +1,264 @@
 # E-commerce Mini-App — Senior Engineer Take-Home
 
-> **Status: scaffolding stage.** This README is being built up commit-by-commit alongside
-> the app (see project history). Sections marked `TODO` are filled in as the corresponding
-> feature lands — nothing below is a claim about finished functionality yet.
-
-## Overview
-
 A production-minded e-commerce product catalog: authenticated product browsing with
-search, category filtering, infinite-scroll pagination, and sponsored-item slotting,
-built as a Next.js (App Router) frontend + NestJS backend + PostgreSQL, fully
-containerized via Docker Compose.
+trigram search, category filtering, virtualized infinite scroll, and sponsored-item
+slotting, built as Next.js (App Router) + NestJS + PostgreSQL, fully containerized via
+Docker Compose.
 
 ## Tech stack
 
-| Layer      | Choice                                   | Why                                                                 |
-|------------|-------------------------------------------|----------------------------------------------------------------------|
-| Frontend   | Next.js (App Router), TypeScript          | Required by spec                                                     |
-| Backend    | NestJS, TypeScript                        | Required by spec                                                     |
-| Database   | PostgreSQL                                | Required by spec                                                     |
-| ORM        | `TODO` (Prisma, tentative)                | Migration + seed DX                                                   |
-| Sessions   | `express-session` + Postgres-backed store | Server-side invalidation is a hard requirement — see Trade-offs      |
-| Containers | Docker / Docker Compose                   | Required by spec — single `docker compose up` boots everything      |
+| Layer      | Choice                                       | Why                                                                                     |
+|------------|-----------------------------------------------|------------------------------------------------------------------------------------------|
+| Frontend   | Next.js 16 (App Router), TypeScript, Tailwind | Required by spec                                                                          |
+| Backend    | NestJS 11, TypeScript                         | Required by spec                                                                          |
+| Database   | PostgreSQL 16                                 | Required by spec                                                                          |
+| ORM        | Prisma 6.19.3 (classic `prisma-client-js`)     | Fast migration + seed DX. Pinned below the newly-released v7 and off the newer `prisma-client` generator — see "Trade-offs" |
+| Sessions   | `express-session` + Postgres-backed store     | Server-side invalidation is a hard requirement — see "Authentication & sessions"          |
+| Containers | Docker / Docker Compose                       | Required by spec — a single `docker compose up` boots everything                         |
 
 ## Getting started
 
 ```bash
-cp .env.example .env   # TODO: fill in once .env.example exists
-docker compose up
+cp .env.example .env
+docker compose up --build
 ```
 
-`TODO`: confirm final port mapping, first-boot migration + seed behavior, and add this
-section's actual steps once Phase 5 of the build lands.
+That's it. On first boot the backend container runs `prisma migrate deploy` (applies the
+schema) then `prisma db seed` (populates demo users + ~3,020 products) before starting the
+API — so the app is fully usable immediately, no manual setup step. Then:
+
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:4000
+
+The seed step re-runs on every container start. This is deliberate, not a bug: it's fully
+idempotent (demo users are upserted, the product catalog is `TRUNCATE ... RESTART
+IDENTITY`'d and regenerated from a fixed `faker.seed(42)`), so restarting the stack always
+gets you back to a known-good state rather than accumulating drift.
+
+### Running locally without Docker (backend/frontend dev servers)
+
+Useful for faster iteration than a full image rebuild:
+
+```bash
+docker compose up postgres   # just the DB
+cd backend && npm install && npx prisma migrate deploy && npx prisma db seed && npm run start:dev
+cd frontend && npm install && npm run dev
+```
 
 ## Demo credentials
 
-`TODO` — populated once the seed script (Phase 1) exists. Will list at least one working
-username/email + password pair here, verbatim, so the app is immediately usable.
+| Email               | Password       |
+|----------------------|----------------|
+| `demo@example.com`   | `ChangeMe123!` |
+| `demo2@example.com`  | `ChangeMe123!` |
+
+Two accounts exist (not one) so the login error states are both demoable without either
+response leaking which case applies: a wrong password and a nonexistent account return the
+identical generic `"Invalid email or password"` message.
 
 ## Architecture
 
-`TODO` — Mermaid diagram covering client, API, database, auth flow, and any external
-services, committed alongside this README once the shape of the system is final
-(Phase 5).
+See [`docs/architecture.md`](docs/architecture.md) for the full Mermaid diagrams: system
+overview, detailed auth sequence, and the Docker Compose deployment topology.
 
-## Authentication & session design
+## Authentication & sessions
 
-`TODO` once Phase 2 lands. Will document explicitly, verbatim, here:
-- How "inactivity" is defined for the 1-hour timeout (currently planned: session tracks
-  `lastSeenAt`, refreshed on every authenticated request; expired sessions are destroyed
-  server-side and return 401, forcing re-login).
-- Rate limiting strategy (per-IP and per-account, on the login endpoint).
-- Cookie flags and CSRF posture.
+- **Inactivity, defined explicitly**: each session carries a `lastSeenAt` timestamp,
+  refreshed on every request that passes the session guard. A request is rejected (401,
+  and the session is destroyed server-side) once `now - lastSeenAt` exceeds
+  `SESSION_INACTIVITY_TIMEOUT_SECONDS` (default 3600 = 1 hour). This is a **sliding**
+  window from the most recent request, not a fixed expiry from login time — "inactivity"
+  means no authenticated request received, matching the spec's own example.
+- **Session storage**: `express-session` backed by `connect-pg-simple` (its own
+  auto-created `session` table in the same Postgres instance), not an in-memory store —
+  survives backend restarts.
+- **Session fixation**: the session id is regenerated on successful login rather than
+  reusing the pre-auth session.
+- **Cookie flags**: `httpOnly` always; `sameSite=lax`; `secure` is tied to `NODE_ENV`,
+  which is intentionally `development` even in the Docker image, because this whole stack
+  runs over plain `http://localhost` — see `.env.example` for the full explanation.
+- **Rate limiting on `POST /auth/login`**: both **per-IP** and **per-account**, tracked
+  independently (an attacker rotating accounts from one IP still hits the IP limit; an
+  attacker rotating IPs against one account still hits the account limit). Defaults: 10
+  attempts/60s per IP, 5 attempts/60s per account (both configurable). Exceeding either
+  returns `429` with a `Retry-After` header.
+  - **Why self-authored instead of `@nestjs/throttler`**: getting genuinely independent
+    IP-tracked and account-tracked limits out of that library means overriding
+    `getTracker` per named throttler, and the exact multi-tracker API shape has changed
+    across its major versions in ways I wasn't fully certain about from memory. This is a
+    security-relevant, explicitly graded requirement, so I chose to own ~50 lines I could
+    fully unit test over guessing at a library's internals under time pressure. It's
+    in-memory (resets on restart, doesn't share state across instances) — the same
+    trade-off as the session store, fine for a single-instance deployment.
+- **Timing side-channel**: a login attempt against a nonexistent email still runs a dummy
+  `bcrypt.compare` against a fixed hash, so it takes roughly as long as a wrong-password
+  attempt against a real account — the response time itself doesn't leak account
+  existence.
+- **CSRF posture**: not implemented, and worth naming explicitly rather than leaving
+  silent. Since auth is cookie-based (not a bearer token the frontend attaches manually),
+  this app is CSRF-relevant. `sameSite=lax` mitigates the most common cross-site POST
+  forgery vectors but isn't a complete answer. With more time: a double-submit cookie
+  token or a custom-header check on state-changing requests.
 
-## Product catalog design
+## Product catalog
 
-`TODO` once Phase 3 lands. Will document:
-- Pagination approach (cursor/keyset vs offset) and why, with perf reasoning.
-- Search approach and the trade-offs considered (see PLAN.md for the current leaning —
-  not repeating internal planning detail here until it's actually implemented).
-- Category filtering.
-- Sponsored item slotting rules and the abuse-prevention discussion required by the spec.
+- **Auth-gated**: every `/products` route sits behind the same session guard as the rest
+  of the app — no catalog data is servable without a valid, non-expired session.
+- **Pagination — keyset in browse mode, offset in search mode**: browse-mode pagination
+  uses a keyset cursor on `id` (`WHERE id > cursor.lastId ORDER BY id ASC`), which stays
+  flat in performance at page 200 as at page 1 — the property that matters for a
+  3,000+-row dataset (`OFFSET 6000` on a plain offset scheme gets progressively more
+  expensive; a keyset cursor never scans past what it returns). Search-mode pagination
+  uses plain `OFFSET`, a deliberate trade-off: search results are ranked by trigram
+  similarity rather than `id`, and the filtered result set is naturally much smaller than
+  the full unfiltered browse case that keyset pagination is protecting against.
+- **Page size**: client-controlled via `?limit=`, validated server-side (`@Min(5) @Max(50)
+  @IsInt`), rejecting out-of-range or non-integer values with `400` — not silently
+  clamped.
+- **Category filter**: validated against a fixed allowlist (kept in sync with the seed
+  script's category list on both frontend and backend), rejecting unknown categories with
+  `400` rather than silently returning an empty result set.
+- **Search**: case-insensitive, via PostgreSQL's `pg_trgm` extension — a GIN trigram index
+  on both `name` and `description`, ranked by `GREATEST(similarity(name, q),
+  similarity(description, q))` descending.
+  - **Why trigram over `ILIKE '%q%'`**: `ILIKE` with a leading wildcard can't use a
+    standard B-tree index at all — it's an O(n) sequential scan regardless of dataset
+    size. The GIN trigram index makes substring/fuzzy matches genuinely indexed.
+  - **Why trigram over full-text (`tsvector`)**: `tsvector`/`ts_rank` gives better
+    linguistic relevance ranking (stemming, stop words) but is materially worse at
+    partial-word and typo tolerance — which matters more for a product search box where
+    users type fragments ("chair" should match "Chairs", "Armchair") than for prose
+    search. Given the choice for this dataset, fuzzy substring matching felt like the more
+    "outstanding search experience" default; a real system would likely combine both.
+  - At the current seed scale (~3,020 rows), Postgres's planner may legitimately choose a
+    sequential scan over the trigram index anyway (the whole table fits in a few pages) —
+    the index becomes load-bearing at realistic production catalog sizes, not
+    necessarily visible in `EXPLAIN` at this demo scale.
+- **Sponsored items** (bonus — treated as required per reviewer instruction, not
+  optional):
+  - Positions 5, 10, 20, 40, 80, 160, ... (1-indexed within the *organic* browse list;
+    the gap doubles after the first). Implemented as a pure, independently unit-tested
+    function (`getSponsoredSlotsInRange`) before it was ever wired into the endpoint —
+    this was the single most fiddly-to-get-subtly-wrong piece of the assignment, since
+    positions must stay correct across page boundaries (a global running count, not reset
+    per page) for the doubling sequence to hold.
+  - Sponsored items are a regular `products` row flagged `isSponsored`, not a separate
+    table — conceptually just promoted products, so a flag avoids duplicating the whole
+    schema for the same entity.
+  - They do **not** count toward the requested `limit` (fetched as a genuine addition on
+    top of the organic page) and do **not** affect the pagination cursor (which only
+    tracks organic progress) — verified by e2e tests asserting the organic count stays
+    exactly at the requested limit regardless of how many sponsored items got interleaved.
+  - They respect the active category filter (a real bug caught during manual testing: the
+    sponsored pool originally ignored it, so browsing "Books" could surface an unrelated
+    Electronics ad — fixed to filter the sponsored pool by category too; if a category has
+    no sponsored inventory, its slots simply go unfilled).
+  - Never shown in search mode, per spec.
+  - Visually distinguished with an amber border + "Sponsored" badge, not just a subtle
+    color change.
+  - **Abuse prevention, given more time** (asked for explicitly by the spec): duplicate
+    sponsored items showing back-to-back across adjacent slots could be prevented by
+    tracking which sponsored id was last shown and excluding it from the next slot's
+    candidate pool; layout shift could be avoided by reserving the row's height before the
+    sponsored item's content loads (not a concern here since data is same-request, but
+    would matter with lazy-loaded ad creative); click fraud would need server-side
+    impression/click logging with per-session or per-IP rate caps on how many sponsored
+    clicks count toward billing, plus anomaly detection on suspiciously high click-through
+    from a single source.
 
 ## Testing strategy
 
-`TODO` — filled in as tests are added per PLAN.md phases.
+- **Backend**: 30 unit tests (pure functions — sponsored-slot math, cursor encoding,
+  rate limiter, session guard, credential validation — each independently verified before
+  being wired into the endpoints that use them) + 20 e2e tests (real HTTP requests via
+  `supertest` against the actual NestJS app and a real Postgres connection: full login/
+  session/rate-limit/logout flows, and full catalog pagination/filter/search/sponsored-
+  slot behavior). Run with `cd backend && npm test && npm run test:e2e`.
+- **Frontend**: one Playwright e2e spec (`frontend/e2e/app.spec.ts`, 8 tests) driving a
+  real headless Chromium against the real dev servers + seeded DB: unauthenticated
+  redirect, wrong-credentials error state, successful login, sponsored item rendering,
+  search hiding sponsored items, category filtering, infinite scroll staying DOM-bounded
+  (virtualization), and logout revoking access. Run with `cd frontend && npm run
+  test:e2e` (frontend + backend + seeded DB must already be running).
+  - **Why Playwright e2e over a Jest/RTL component-test harness**: no component-test setup
+    existed yet, and every bug this build actually hit was integration-shaped — a CSS
+    layout interaction breaking virtualization, a cookie-lifecycle bug in logout — not
+    something a mocked component render would have exercised. Given the time budget, one
+    real, thorough e2e pass over the whole journey had a better bug-catching-to-effort
+    ratio than shallow mocked unit tests for presentational components. This is the
+    honest trade-off, not an oversight: with more time, I'd add both.
 
 ## Trade-offs & what I'd do differently with more time
 
-`TODO` — this section is a first-class deliverable per the assignment brief and will be
-kept honest and specific (not generic hedging) as scope decisions actually get made
-during the build, including anything cut under time pressure.
+- **Single-instance assumptions**: the session store and the login rate limiter are both
+  scoped to one running backend process (Postgres-backed sessions survive restarts, but
+  the rate limiter is in-memory and doesn't share state across instances). Fine for this
+  scope; the real answer for a horizontally-scaled deployment is Redis for both.
+- **No CSRF token** beyond `sameSite=lax` — see "Authentication & sessions" above.
+- **Search v2**: combine trigram fuzzy matching with `tsvector` relevance ranking, or an
+  external engine (Meilisearch/Typesense) for a genuinely state-of-the-art search
+  experience at larger scale.
+- **No product images**: `ProductCard` renders a deterministic pastel color+initial swatch
+  hashed from the product name rather than a real image — no real images are seeded/
+  hosted, keeping everything self-contained and offline-friendly. A real build would seed
+  actual (or at least placeholder-service) images.
+- **Category list duplication**: the 15-category allowlist is hardcoded in both
+  `backend/src/catalog/dto/get-products-query.dto.ts` and `frontend/src/lib/categories.ts`
+  rather than served from a `GET /categories` endpoint — no such endpoint exists (out of
+  spec scope), so this is a small, deliberate duplication.
+- **Dependency leanness**: the backend's runtime Docker image includes full
+  `devDependencies` (not `--omit=dev`) because the seed script and `prisma.config.ts` both
+  need `tsx` at runtime — a smaller image would split the seed step into its own build
+  stage or precompile it.
+- **Bleeding-edge tooling caution**: Prisma defaults to a new `prisma-client` generator
+  (ESM-flavored output) as of 6.x/7.x; it threw `ReferenceError: exports is not defined`
+  under Nest's standard CommonJS build. Rather than debug an unfamiliar new generator API
+  under time pressure, I pinned to the classic `prisma-client-js` generator and Prisma
+  6.19.3 (not the newly-released 7.x) — the long-established, unambiguous integration
+  path. Similarly, this scaffold landed on Next.js 16.2.10, newer than most available
+  reference material; I read the framework's own bundled migration docs
+  (`middleware.ts` → `proxy.ts`, fully-async `params`/`searchParams`) before writing
+  frontend code rather than assuming older conventions still applied.
+- **Autocomplete/suggestions dropdown**: considered (see "Credits" below for the UX
+  pattern it would have been based on) but not built — the debounced search input and
+  category filter cover the spec's actual requirement; a live suggestions dropdown backed
+  by the trigram index would be the next search enhancement.
 
 ## Improvements / enhancements beyond spec
 
-`TODO` — anything implemented from the brainstorm beyond the required feature set will be
-listed here explicitly, per the assignment's request not to let extras go unnoticed.
+- **Sliding-window inactivity timeout with an explicit, testable definition** — the spec
+  asked us to define this explicitly; it's enforced by a guard with its own unit tests,
+  not just documented.
+- **Timing-safe login responses** (dummy bcrypt compare on the no-such-user path).
+- **Session fixation prevention** (session id regenerated on login).
+- **`Retry-After` header** on rate-limited login responses, not just a bare 429.
+- **Keyset (not offset) pagination** for the browse case, specifically for the "backend
+  query efficiency" grading criterion at the 3,000+-row scale the spec asks for.
+- **Sponsored pool respects the active category filter** (see "Product catalog" above).
+- **Virtualized infinite scroll** (`@tanstack/react-virtual`) — rendered DOM nodes stay
+  bounded regardless of scroll depth, not just "loads more on scroll."
+- **A full Playwright e2e suite**, run against both the local dev servers and the
+  containerized Docker Compose stack.
+- **Docker healthchecks and explicit startup ordering** (postgres → backend → frontend),
+  not just `depends_on` for container creation order.
 
 ## Credits
 
-The search box's interaction pattern (debounce, arrow-key navigation, outside-click close,
-empty-state fallback) is adapted from an existing BurrowSoft product's search UX. No code,
-API keys, or external services are shared between that product and this app — this
-project's search runs entirely against its own seeded Postgres data.
+The search input's interaction pattern (debounce, clear button, focus ring) is adapted
+from an existing BurrowSoft product's search bar. No code, API keys, or external services
+are shared between that product and this app — this project's search runs entirely against
+its own seeded Postgres data, with no live external calls.
 
 ## Live deployment
 
 Not provided. This was considered (mounting under an existing BurrowSoft production
-domain), but deliberately skipped: the spec's actual deliverable is a public repo plus a
+domain) but deliberately skipped: the spec's actual deliverable is a public repo plus a
 local `docker compose up`, and standing up a live route would have meant touching a real,
-indexed, monetized production site for no graded benefit. Run it locally per the steps
-above.
+indexed, monetized production site for no graded benefit. Run it locally per "Getting
+started" above.
 
 ## Environment variables
 
-See `.env.example` (added in Phase 5) for the full list with descriptions.
+See [`.env.example`](.env.example) for the full list, each documented inline — database
+credentials, session/rate-limit tuning, seed script knobs, and the frontend/backend origin
+wiring. Copy it to `.env` before running `docker compose up`.
