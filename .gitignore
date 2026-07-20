@@ -12,9 +12,6 @@ out/
 *.tsbuildinfo
 coverage/
 
-# --- Prisma generated client (regenerated via `prisma generate`) ---
-generated/
-
 # --- Env / secrets ---
 .env
 .env.local
