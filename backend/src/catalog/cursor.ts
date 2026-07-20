@@ -17,6 +17,14 @@ export function encodeCursor(cursor: Cursor): string {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
 
+// Rejects negative values, not just non-integers: a negative offset/lastId/
+// position reaching the SQL layer (e.g. `OFFSET -10`) would surface as a
+// Postgres error (500) instead of the graceful "restart from the beginning"
+// this function is meant to guarantee for any malformed cursor.
+function isNonNegativeInt(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
 export function decodeCursor(raw: string | undefined, mode: "browse" | "search"): Cursor {
   if (!raw) {
     return mode === "browse" ? { mode: "browse", lastId: 0, position: 0 } : { mode: "search", offset: 0 };
@@ -24,10 +32,10 @@ export function decodeCursor(raw: string | undefined, mode: "browse" | "search")
 
   try {
     const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-    if (mode === "browse" && parsed?.mode === "browse" && Number.isInteger(parsed.lastId) && Number.isInteger(parsed.position)) {
+    if (mode === "browse" && parsed?.mode === "browse" && isNonNegativeInt(parsed.lastId) && isNonNegativeInt(parsed.position)) {
       return parsed as Cursor;
     }
-    if (mode === "search" && parsed?.mode === "search" && Number.isInteger(parsed.offset)) {
+    if (mode === "search" && parsed?.mode === "search" && isNonNegativeInt(parsed.offset)) {
       return parsed as Cursor;
     }
   } catch {
