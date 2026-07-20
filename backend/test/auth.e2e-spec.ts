@@ -1,34 +1,14 @@
 import 'dotenv/config';
-import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import * as bcrypt from 'bcrypt';
 import { Pool } from 'pg';
-import { AppModule } from './../src/app.module';
-import { configureApp } from './../src/setup-app';
 import { PrismaService } from './../src/prisma/prisma.service';
+import { buildApp, extractCookie } from './test-utils';
 
 const TEST_EMAIL = 'e2e-auth-test@example.com';
 const TEST_PASSWORD = 'CorrectHorseBatteryStaple1!';
-
-async function buildApp(): Promise<{ app: INestApplication<App>; sessionPool: Pool }> {
-  const moduleFixture: TestingModule = await Test.createTestingModule({
-    imports: [AppModule],
-  }).compile();
-  const app: INestApplication<App> = moduleFixture.createNestApplication();
-  const { sessionPool } = configureApp(app);
-  await app.init();
-  return { app, sessionPool };
-}
-
-function extractCookie(res: request.Response): string {
-  const setCookie = res.headers['set-cookie'];
-  const cookies = Array.isArray(setCookie) ? setCookie : [setCookie];
-  const sidCookie = cookies.find((c: string) => c.startsWith('connect.sid='));
-  if (!sidCookie) throw new Error('No session cookie in response');
-  return sidCookie.split(';')[0];
-}
 
 describe('Auth (e2e)', () => {
   let app: INestApplication<App>;
