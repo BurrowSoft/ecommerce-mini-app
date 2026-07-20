@@ -128,6 +128,8 @@ export function SearchInput({
           onClick={() => {
             onChange("");
             setSuggestions([]);
+            setActiveIndex(-1);
+            setOpen(false);
           }}
           aria-label="Clear search"
           className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
