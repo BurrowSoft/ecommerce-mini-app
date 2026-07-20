@@ -10,4 +10,4 @@ async function bootstrap() {
   process.on('SIGINT', () => void sessionPool.end());
   await app.listen(process.env.BACKEND_PORT ?? process.env.PORT ?? 4000);
 }
-bootstrap();
+void bootstrap();

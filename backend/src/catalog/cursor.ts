@@ -11,24 +11,43 @@
  *   for why this is an acceptable trade-off (much smaller result sets than
  *   the full unfiltered browse case that keyset pagination protects).
  */
-export type Cursor = { mode: "browse"; lastId: number; position: number } | { mode: "search"; offset: number };
+export type Cursor =
+  | { mode: 'browse'; lastId: number; position: number }
+  | { mode: 'search'; offset: number };
 
 export function encodeCursor(cursor: Cursor): string {
-  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
 }
 
-export function decodeCursor(raw: string | undefined, mode: "browse" | "search"): Cursor {
+export function decodeCursor(
+  raw: string | undefined,
+  mode: 'browse' | 'search',
+): Cursor {
   if (!raw) {
-    return mode === "browse" ? { mode: "browse", lastId: 0, position: 0 } : { mode: "search", offset: 0 };
+    return mode === 'browse'
+      ? { mode: 'browse', lastId: 0, position: 0 }
+      : { mode: 'search', offset: 0 };
   }
 
   try {
-    const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-    if (mode === "browse" && parsed?.mode === "browse" && Number.isInteger(parsed.lastId) && Number.isInteger(parsed.position)) {
-      return parsed as Cursor;
+    const parsed: unknown = JSON.parse(
+      Buffer.from(raw, 'base64url').toString('utf8'),
+    );
+    const candidate = parsed as Partial<Cursor> | null;
+    if (
+      mode === 'browse' &&
+      candidate?.mode === 'browse' &&
+      Number.isInteger(candidate.lastId) &&
+      Number.isInteger(candidate.position)
+    ) {
+      return candidate as Cursor;
     }
-    if (mode === "search" && parsed?.mode === "search" && Number.isInteger(parsed.offset)) {
-      return parsed as Cursor;
+    if (
+      mode === 'search' &&
+      candidate?.mode === 'search' &&
+      Number.isInteger(candidate.offset)
+    ) {
+      return candidate as Cursor;
     }
   } catch {
     // fall through to default below
@@ -37,5 +56,7 @@ export function decodeCursor(raw: string | undefined, mode: "browse" | "search")
   // Malformed or mode-mismatched cursor (e.g. client added a search query
   // mid-scroll) — restart from the beginning rather than 400, since a bad
   // cursor is recoverable and shouldn't hard-fail the request.
-  return mode === "browse" ? { mode: "browse", lastId: 0, position: 0 } : { mode: "search", offset: 0 };
+  return mode === 'browse'
+    ? { mode: 'browse', lastId: 0, position: 0 }
+    : { mode: 'search', offset: 0 };
 }

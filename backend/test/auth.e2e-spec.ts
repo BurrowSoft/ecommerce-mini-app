@@ -10,6 +10,10 @@ import { buildApp, extractCookie } from './test-utils';
 const TEST_EMAIL = 'e2e-auth-test@example.com';
 const TEST_PASSWORD = 'CorrectHorseBatteryStaple1!';
 
+function errorMessage(res: request.Response): string {
+  return (res.body as { message: string }).message;
+}
+
 describe('Auth (e2e)', () => {
   let app: INestApplication<App>;
   let sessionPool: Pool;
@@ -55,7 +59,7 @@ describe('Auth (e2e)', () => {
       .post('/auth/login')
       .send({ email: TEST_EMAIL, password: 'wrong-password' })
       .expect(401);
-    expect(res.body.message).toBe('Invalid email or password');
+    expect(errorMessage(res)).toBe('Invalid email or password');
   });
 
   it('rejects a nonexistent account with the identical generic message', async () => {
@@ -63,7 +67,7 @@ describe('Auth (e2e)', () => {
       .post('/auth/login')
       .send({ email: 'nobody-at-all@example.com', password: TEST_PASSWORD })
       .expect(401);
-    expect(res.body.message).toBe('Invalid email or password');
+    expect(errorMessage(res)).toBe('Invalid email or password');
   });
 
   it('logs in with correct credentials, sets an httpOnly session cookie, and grants access', async () => {
@@ -82,9 +86,15 @@ describe('Auth (e2e)', () => {
       .expect(200);
     expect(meRes.body).toHaveProperty('userId');
 
-    await request(app.getHttpServer()).post('/auth/logout').set('Cookie', cookie).expect(200);
+    await request(app.getHttpServer())
+      .post('/auth/logout')
+      .set('Cookie', cookie)
+      .expect(200);
 
-    await request(app.getHttpServer()).get('/auth/me').set('Cookie', cookie).expect(401);
+    await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Cookie', cookie)
+      .expect(401);
   });
 });
 

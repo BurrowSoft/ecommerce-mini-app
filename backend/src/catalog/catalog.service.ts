@@ -1,9 +1,9 @@
-import { Injectable } from "@nestjs/common";
-import { Prisma, Product } from "@prisma/client";
-import { PrismaService } from "../prisma/prisma.service";
-import { GetProductsQueryDto } from "./dto/get-products-query.dto";
-import { Cursor, decodeCursor, encodeCursor } from "./cursor";
-import { getSponsoredSlotsInRange } from "./sponsored-slots";
+import { Injectable } from '@nestjs/common';
+import { Prisma, Product } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { GetProductsQueryDto } from './dto/get-products-query.dto';
+import { Cursor, decodeCursor, encodeCursor } from './cursor';
+import { getSponsoredSlotsInRange } from './sponsored-slots';
 
 export interface ProductListItemDto {
   id: number;
@@ -21,7 +21,10 @@ export interface ProductListResponse {
 
 const DEFAULT_PAGE_SIZE = 20;
 
-function toDto(row: Pick<Product, "id" | "name" | "description" | "category" | "priceCents">, isSponsored: boolean): ProductListItemDto {
+function toDto(
+  row: Pick<Product, 'id' | 'name' | 'description' | 'category' | 'priceCents'>,
+  isSponsored: boolean,
+): ProductListItemDto {
   return {
     id: row.id,
     name: row.name,
@@ -41,7 +44,12 @@ export class CatalogService {
     const searchTerm = query.q?.trim();
 
     if (searchTerm) {
-      return this.searchProducts(searchTerm, limit, query.category, query.cursor);
+      return this.searchProducts(
+        searchTerm,
+        limit,
+        query.category,
+        query.cursor,
+      );
     }
     return this.browseProducts(limit, query.category, query.cursor);
   }
@@ -51,7 +59,10 @@ export class CatalogService {
     category: string | undefined,
     cursorRaw: string | undefined,
   ): Promise<ProductListResponse> {
-    const cursor = decodeCursor(cursorRaw, "browse") as Extract<Cursor, { mode: "browse" }>;
+    const cursor = decodeCursor(cursorRaw, 'browse') as Extract<
+      Cursor,
+      { mode: 'browse' }
+    >;
 
     const rows = await this.prisma.product.findMany({
       where: {
@@ -59,7 +70,7 @@ export class CatalogService {
         id: { gt: cursor.lastId },
         ...(category ? { category } : {}),
       },
-      orderBy: { id: "asc" },
+      orderBy: { id: 'asc' },
       take: limit + 1, // one extra row to detect whether there's a next page
     });
 
@@ -76,12 +87,13 @@ export class CatalogService {
       // an unrelated category showing up while browsing "Books" would look
       // broken. If a category has no sponsored inventory, its slots simply
       // go unfilled rather than falling back to unrelated products.
-      const sponsoredPool = slots.length > 0
-        ? await this.prisma.product.findMany({
-            where: { isSponsored: true, ...(category ? { category } : {}) },
-            orderBy: { id: "asc" },
-          })
-        : [];
+      const sponsoredPool =
+        slots.length > 0
+          ? await this.prisma.product.findMany({
+              where: { isSponsored: true, ...(category ? { category } : {}) },
+              orderBy: { id: 'asc' },
+            })
+          : [];
 
       let organicIndex = 0;
       for (let position = startPosition; position <= endPosition; position++) {
@@ -90,15 +102,22 @@ export class CatalogService {
 
         const slot = slots.find((s) => s.position === position);
         if (slot && sponsoredPool.length > 0) {
-          items.push(toDto(sponsoredPool[slot.slotIndex % sponsoredPool.length], true));
+          items.push(
+            toDto(sponsoredPool[slot.slotIndex % sponsoredPool.length], true),
+          );
         }
       }
     }
 
     const newPosition = cursor.position + organic.length;
-    const newLastId = organic.length > 0 ? organic[organic.length - 1].id : cursor.lastId;
+    const newLastId =
+      organic.length > 0 ? organic[organic.length - 1].id : cursor.lastId;
     const nextCursor = hasMore
-      ? encodeCursor({ mode: "browse", lastId: newLastId, position: newPosition })
+      ? encodeCursor({
+          mode: 'browse',
+          lastId: newLastId,
+          position: newPosition,
+        })
       : null;
 
     return { items, nextCursor };
@@ -110,14 +129,25 @@ export class CatalogService {
     category: string | undefined,
     cursorRaw: string | undefined,
   ): Promise<ProductListResponse> {
-    const cursor = decodeCursor(cursorRaw, "search") as Extract<Cursor, { mode: "search" }>;
+    const cursor = decodeCursor(cursorRaw, 'search') as Extract<
+      Cursor,
+      { mode: 'search' }
+    >;
 
-    const categoryFilter = category ? Prisma.sql`AND category = ${category}` : Prisma.empty;
+    const categoryFilter = category
+      ? Prisma.sql`AND category = ${category}`
+      : Prisma.empty;
 
     // Trigram similarity ranking (see README "Search"). Sponsored items are
     // always excluded here — spec requires no sponsored items in search mode.
     const rows = await this.prisma.$queryRaw<
-      Array<{ id: number; name: string; description: string; category: string; priceCents: number }>
+      Array<{
+        id: number;
+        name: string;
+        description: string;
+        category: string;
+        priceCents: number;
+      }>
     >`
       SELECT id, name, description, category, "priceCents"
       FROM products
@@ -132,7 +162,7 @@ export class CatalogService {
     const hasMore = rows.length > limit;
     const organic = rows.slice(0, limit);
     const nextCursor = hasMore
-      ? encodeCursor({ mode: "search", offset: cursor.offset + organic.length })
+      ? encodeCursor({ mode: 'search', offset: cursor.offset + organic.length })
       : null;
 
     return { items: organic.map((r) => toDto(r, false)), nextCursor };

@@ -1,6 +1,6 @@
-import "express-session";
+import 'express-session';
 
-declare module "express-session" {
+declare module 'express-session' {
   interface SessionData {
     userId?: number;
     // Epoch ms of the last authenticated request seen on this session.

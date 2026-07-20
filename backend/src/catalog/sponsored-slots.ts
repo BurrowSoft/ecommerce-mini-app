@@ -17,7 +17,10 @@ export interface SponsoredSlot {
 }
 
 /** Every sponsored slot with startPosition <= position <= endPosition, ascending. Both bounds inclusive, 1-indexed. */
-export function getSponsoredSlotsInRange(startPosition: number, endPosition: number): SponsoredSlot[] {
+export function getSponsoredSlotsInRange(
+  startPosition: number,
+  endPosition: number,
+): SponsoredSlot[] {
   const slots: SponsoredSlot[] = [];
   let position = 5;
   let slotIndex = 0;

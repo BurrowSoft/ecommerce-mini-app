@@ -33,7 +33,11 @@ export function configureApp(app: INestApplication): { sessionPool: Pool } {
 
   app.use(
     session({
-      store: new PgSession({ pool: sessionPool, createTableIfMissing: true, tableName: 'session' }),
+      store: new PgSession({
+        pool: sessionPool,
+        createTableIfMissing: true,
+        tableName: 'session',
+      }),
       secret: process.env.SESSION_SECRET ?? 'dev-secret-change-me',
       resave: false,
       saveUninitialized: false,

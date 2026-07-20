@@ -8,6 +8,21 @@ import { buildApp, extractCookie } from './test-utils';
 const DEMO_EMAIL = process.env.SEED_DEMO_USER_EMAIL ?? 'demo@example.com';
 const DEMO_PASSWORD = process.env.SEED_DEMO_USER_PASSWORD ?? 'ChangeMe123!';
 
+interface ProductListItem {
+  id: number;
+  category: string;
+  isSponsored: boolean;
+}
+
+interface ProductListResponse {
+  items: ProductListItem[];
+  nextCursor: string | null;
+}
+
+function body(res: request.Response): ProductListResponse {
+  return res.body as ProductListResponse;
+}
+
 describe('Catalog (e2e)', () => {
   let app: INestApplication<App>;
   let sessionPool: Pool;
@@ -65,7 +80,7 @@ describe('Catalog (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
 
-    const organic = res.body.items.filter((i: { isSponsored: boolean }) => !i.isSponsored);
+    const organic = body(res).items.filter((i) => !i.isSponsored);
     expect(organic).toHaveLength(10);
   });
 
@@ -75,9 +90,9 @@ describe('Catalog (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
 
-    const sponsoredIndexes = res.body.items
-      .map((item: { isSponsored: boolean }, idx: number) => (item.isSponsored ? idx : null))
-      .filter((idx: number | null) => idx !== null);
+    const sponsoredIndexes = body(res)
+      .items.map((item, idx) => (item.isSponsored ? idx : null))
+      .filter((idx): idx is number => idx !== null);
 
     // Position 5 sponsored item lands at array index 5 (after 5 organic items,
     // 0-indexed); position 10 lands at index 11 (5 organic + 1 sponsored + 5 organic).
@@ -89,19 +104,21 @@ describe('Catalog (e2e)', () => {
       .get('/products?limit=10')
       .set('Cookie', cookie)
       .expect(200);
-    expect(page1.body.nextCursor).toBeTruthy();
+    expect(body(page1).nextCursor).toBeTruthy();
 
     const page2 = await request(app.getHttpServer())
-      .get(`/products?limit=10&cursor=${encodeURIComponent(page1.body.nextCursor)}`)
+      .get(
+        `/products?limit=10&cursor=${encodeURIComponent(body(page1).nextCursor!)}`,
+      )
       .set('Cookie', cookie)
       .expect(200);
 
-    const organic = page2.body.items.filter((i: { isSponsored: boolean }) => !i.isSponsored);
+    const organic = body(page2).items.filter((i) => !i.isSponsored);
     expect(organic).toHaveLength(10);
 
-    const sponsoredIndexes = page2.body.items
-      .map((item: { isSponsored: boolean }, idx: number) => (item.isSponsored ? idx : null))
-      .filter((idx: number | null) => idx !== null);
+    const sponsoredIndexes = body(page2)
+      .items.map((item, idx) => (item.isSponsored ? idx : null))
+      .filter((idx): idx is number => idx !== null);
     // Global position 20 is the 10th organic item on this page -> index 10 (0-indexed).
     expect(sponsoredIndexes).toEqual([10]);
   });
@@ -112,8 +129,8 @@ describe('Catalog (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
 
-    expect(res.body.items.length).toBeGreaterThan(0);
-    for (const item of res.body.items) {
+    expect(body(res).items.length).toBeGreaterThan(0);
+    for (const item of body(res).items) {
       expect(item.category).toBe('Books');
     }
   });
@@ -124,8 +141,8 @@ describe('Catalog (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
 
-    expect(res.body.items.length).toBeGreaterThan(0);
-    expect(res.body.items.every((i: { isSponsored: boolean }) => !i.isSponsored)).toBe(true);
+    expect(body(res).items.length).toBeGreaterThan(0);
+    expect(body(res).items.every((i) => !i.isSponsored)).toBe(true);
   });
 
   it('search is case-insensitive', async () => {
@@ -138,8 +155,14 @@ describe('Catalog (e2e)', () => {
       .set('Cookie', cookie)
       .expect(200);
 
-    expect(upper.body.items.map((i: { id: number }) => i.id).sort()).toEqual(
-      lower.body.items.map((i: { id: number }) => i.id).sort(),
+    expect(
+      body(upper)
+        .items.map((i) => i.id)
+        .sort(),
+    ).toEqual(
+      body(lower)
+        .items.map((i) => i.id)
+        .sort(),
     );
   });
 
@@ -148,15 +171,17 @@ describe('Catalog (e2e)', () => {
       .get('/products?limit=5&q=chair')
       .set('Cookie', cookie)
       .expect(200);
-    expect(page1.body.nextCursor).toBeTruthy();
+    expect(body(page1).nextCursor).toBeTruthy();
 
     const page2 = await request(app.getHttpServer())
-      .get(`/products?limit=5&q=chair&cursor=${encodeURIComponent(page1.body.nextCursor)}`)
+      .get(
+        `/products?limit=5&q=chair&cursor=${encodeURIComponent(body(page1).nextCursor!)}`,
+      )
       .set('Cookie', cookie)
       .expect(200);
 
-    const page1Ids = new Set(page1.body.items.map((i: { id: number }) => i.id));
-    const overlap = page2.body.items.filter((i: { id: number }) => page1Ids.has(i.id));
+    const page1Ids = new Set(body(page1).items.map((i) => i.id));
+    const overlap = body(page2).items.filter((i) => page1Ids.has(i.id));
     expect(overlap).toHaveLength(0);
   });
 });
