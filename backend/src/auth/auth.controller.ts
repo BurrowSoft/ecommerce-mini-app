@@ -78,8 +78,14 @@ export class AuthController {
   @Post("logout")
   @HttpCode(200)
   @UseGuards(SessionAuthGuard)
-  async logout(@Req() req: Request) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await destroySession(req);
+    // session.destroy() only removes the server-side session record — it
+    // does not, by itself, clear the cookie in the browser. Without this,
+    // the stale (now-meaningless) cookie stays present client-side, which
+    // fooled the frontend's proxy.ts cookie-presence check into thinking
+    // the user was still logged in until the next API call 401'd.
+    res.clearCookie("connect.sid");
     return { message: "Logged out" };
   }
 
