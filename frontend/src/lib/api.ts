@@ -11,12 +11,25 @@ export class ApiError extends Error {
   }
 }
 
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Double-submit CSRF token: the backend issues a readable csrf_token
+  // cookie on login and expects it echoed back as this header on any
+  // state-changing request. GET/HEAD are never CSRF-protected, so skip the
+  // lookup for those (and it's simply absent before login anyway).
+  const method = (init?.method ?? "GET").toUpperCase();
+  const csrfToken = method !== "GET" && method !== "HEAD" ? readCookie("csrf_token") : null;
+
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
       ...init?.headers,
     },
   });
