@@ -6,11 +6,13 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ApiError, getProducts, logout, ProductListItem } from "@/lib/api";
 import { CATEGORIES } from "@/lib/categories";
 import { ProductCard } from "./ProductCard";
+import { ProductCardSkeleton } from "./ProductCardSkeleton";
 import { SearchInput } from "./SearchInput";
 
 const PAGE_SIZE = 24;
 const ROW_HEIGHT = 96;
 const PREFETCH_THRESHOLD = 5;
+const SKELETON_COUNT = 8;
 
 export function CatalogView() {
   const router = useRouter();
@@ -149,7 +151,13 @@ export function CatalogView() {
 
       <div ref={parentRef} className="flex-1 overflow-y-auto">
         {initialLoad ? (
-          <p className="py-10 text-center text-sm text-zinc-400">Loading…</p>
+          <div className="mx-auto max-w-4xl px-4" role="status" aria-label="Loading products">
+            {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
+              <div key={i} className="px-4 py-1.5" style={{ height: ROW_HEIGHT }}>
+                <ProductCardSkeleton />
+              </div>
+            ))}
+          </div>
         ) : items.length === 0 ? (
           <p className="py-10 text-center text-sm text-zinc-400">No products found.</p>
         ) : (
@@ -169,7 +177,13 @@ export function CatalogView() {
           </div>
         )}
 
-        {loading && <p className="py-4 text-center text-sm text-zinc-400">Loading more…</p>}
+        {loading && (
+          <div className="mx-auto max-w-4xl px-4" role="status" aria-label="Loading more products">
+            <div className="px-4 py-1.5" style={{ height: ROW_HEIGHT }}>
+              <ProductCardSkeleton />
+            </div>
+          </div>
+        )}
         {!hasMore && items.length > 0 && !loading && (
           <p className="py-4 text-center text-sm text-zinc-400">You&apos;ve reached the end.</p>
         )}
