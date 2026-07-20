@@ -6,7 +6,10 @@ import { Pool } from 'pg';
 import { AppModule } from './../src/app.module';
 import { configureApp } from './../src/setup-app';
 
-export async function buildApp(): Promise<{ app: INestApplication<App>; sessionPool: Pool }> {
+export async function buildApp(): Promise<{
+  app: INestApplication<App>;
+  sessionPool: Pool;
+}> {
   const moduleFixture: TestingModule = await Test.createTestingModule({
     imports: [AppModule],
   }).compile();
@@ -17,9 +20,11 @@ export async function buildApp(): Promise<{ app: INestApplication<App>; sessionP
 }
 
 export function extractCookie(res: request.Response): string {
-  const setCookie = res.headers['set-cookie'];
-  const cookies = Array.isArray(setCookie) ? setCookie : [setCookie];
-  const sidCookie = cookies.find((c: string) => c.startsWith('connect.sid='));
+  const setCookie = res.headers['set-cookie'] as string[] | string | undefined;
+  const cookies: string[] = Array.isArray(setCookie)
+    ? setCookie
+    : [setCookie ?? ''];
+  const sidCookie = cookies.find((c) => c.startsWith('connect.sid='));
   if (!sidCookie) throw new Error('No session cookie in response');
   return sidCookie.split(';')[0];
 }

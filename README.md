@@ -262,3 +262,24 @@ started" above.
 See [`.env.example`](.env.example) for the full list, each documented inline — database
 credentials, session/rate-limit tuning, seed script knobs, and the frontend/backend origin
 wiring. Copy it to `.env` before running `docker compose up`.
+
+## Development workflow
+
+Rather than one flat push, this repo was built as a stack of phase-scoped pull requests,
+each merged in order with GitHub Copilot requested as a reviewer:
+
+1. **Scaffold** — monorepo layout, gitignore, Next.js + NestJS bootstrap, docker-compose
+   Postgres service.
+2. **Data layer** — Prisma schema/migrations, `pg_trgm` search index, seed script.
+3. **Auth & sessions** — login/logout, session guard with the explicit inactivity timeout,
+   per-IP/per-account rate limiting.
+4. **Catalog API** — sponsored-slot math and cursor encoding (as tested pure functions
+   first), then the `GET /products` endpoint built on top of them.
+5. **Frontend** — login page, auth-gating proxy, virtualized infinite-scroll catalog,
+   Playwright e2e suite.
+6. **Docker & docs** — full docker-compose stack, architecture diagram, this README.
+7. **Lint cleanup** — a dedicated pass fixing every remaining eslint error, kept as its own
+   PR so it didn't dilute the docs/Docker diff above with unrelated file-touches.
+
+Each PR only ever depends on the one before it (a strictly sequential build, not
+independent features), so the chain merges without conflicts by construction.

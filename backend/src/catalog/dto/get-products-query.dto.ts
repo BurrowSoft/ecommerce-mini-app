@@ -1,23 +1,23 @@
-import { Type } from "class-transformer";
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 // Kept in sync with the CATEGORIES list in prisma/seed.ts.
 export const KNOWN_CATEGORIES = [
-  "Electronics",
-  "Home & Kitchen",
-  "Sports & Outdoors",
-  "Books",
-  "Toys & Games",
-  "Beauty & Personal Care",
-  "Clothing",
-  "Shoes",
-  "Grocery",
-  "Office Supplies",
-  "Pet Supplies",
-  "Automotive",
-  "Garden & Outdoor",
-  "Health & Household",
-  "Jewelry",
+  'Electronics',
+  'Home & Kitchen',
+  'Sports & Outdoors',
+  'Books',
+  'Toys & Games',
+  'Beauty & Personal Care',
+  'Clothing',
+  'Shoes',
+  'Grocery',
+  'Office Supplies',
+  'Pet Supplies',
+  'Automotive',
+  'Garden & Outdoor',
+  'Health & Household',
+  'Jewelry',
 ] as const;
 
 export class GetProductsQueryDto {

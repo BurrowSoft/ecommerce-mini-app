@@ -1,5 +1,10 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
-import type { Request } from "express";
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Request } from 'express';
 
 /**
  * Guards every catalog/protected route. "Inactivity" is defined explicitly
@@ -15,7 +20,7 @@ export class SessionAuthGuard implements CanActivate {
     const session = req.session;
 
     if (!session?.userId || !session.lastSeenAt) {
-      throw new UnauthorizedException("Not authenticated");
+      throw new UnauthorizedException('Not authenticated');
     }
 
     const inactivityTimeoutMs =
@@ -25,7 +30,9 @@ export class SessionAuthGuard implements CanActivate {
       session.destroy(() => {
         /* best-effort cleanup; response has already been decided below */
       });
-      throw new UnauthorizedException("Session expired due to inactivity, please log in again");
+      throw new UnauthorizedException(
+        'Session expired due to inactivity, please log in again',
+      );
     }
 
     session.lastSeenAt = Date.now();

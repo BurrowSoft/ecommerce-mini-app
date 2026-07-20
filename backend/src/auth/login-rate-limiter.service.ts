@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -34,12 +34,15 @@ export class LoginRateLimiterService implements OnModuleDestroy {
 
   private readonly ipConfig: WindowConfig = {
     max: Number(process.env.LOGIN_RATE_LIMIT_PER_IP_MAX ?? 10),
-    windowMs: Number(process.env.LOGIN_RATE_LIMIT_PER_IP_WINDOW_SECONDS ?? 60) * 1000,
+    windowMs:
+      Number(process.env.LOGIN_RATE_LIMIT_PER_IP_WINDOW_SECONDS ?? 60) * 1000,
   };
 
   private readonly accountConfig: WindowConfig = {
     max: Number(process.env.LOGIN_RATE_LIMIT_PER_ACCOUNT_MAX ?? 5),
-    windowMs: Number(process.env.LOGIN_RATE_LIMIT_PER_ACCOUNT_WINDOW_SECONDS ?? 60) * 1000,
+    windowMs:
+      Number(process.env.LOGIN_RATE_LIMIT_PER_ACCOUNT_WINDOW_SECONDS ?? 60) *
+      1000,
   };
 
   constructor() {
@@ -55,7 +58,8 @@ export class LoginRateLimiterService implements OnModuleDestroy {
    * "keys active recently", not "every key ever seen". */
   private sweep(): void {
     const now = Date.now();
-    const staleCutoff = now - Math.max(this.ipConfig.windowMs, this.accountConfig.windowMs);
+    const staleCutoff =
+      now - Math.max(this.ipConfig.windowMs, this.accountConfig.windowMs);
     for (const [key, timestamps] of this.hitsByKey) {
       const stillRecent = timestamps.some((ts) => ts > staleCutoff);
       if (!stillRecent) this.hitsByKey.delete(key);
@@ -65,7 +69,10 @@ export class LoginRateLimiterService implements OnModuleDestroy {
   /** Records this attempt and reports whether it's within limits. Call once per login request. */
   checkAndRecord(ip: string, email: string): RateLimitResult {
     const ipResult = this.hit(`ip:${ip}`, this.ipConfig);
-    const accountResult = this.hit(`account:${email.toLowerCase()}`, this.accountConfig);
+    const accountResult = this.hit(
+      `account:${email.toLowerCase()}`,
+      this.accountConfig,
+    );
 
     if (!ipResult.allowed || !accountResult.allowed) {
       const retryAfterSeconds = Math.max(
@@ -85,7 +92,9 @@ export class LoginRateLimiterService implements OnModuleDestroy {
     const recent = existing.filter((ts) => ts > windowStart);
 
     if (recent.length >= config.max) {
-      const retryAfterSeconds = Math.ceil((recent[0] + config.windowMs - now) / 1000);
+      const retryAfterSeconds = Math.ceil(
+        (recent[0] + config.windowMs - now) / 1000,
+      );
       this.hitsByKey.set(key, recent);
       return { allowed: false, retryAfterSeconds };
     }
