@@ -94,11 +94,11 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
   `bcrypt.compare` against a fixed hash, so it takes roughly as long as a wrong-password
   attempt against a real account — the response time itself doesn't leak account
   existence.
-- **CSRF posture**: not implemented, and worth naming explicitly rather than leaving
-  silent. Since auth is cookie-based (not a bearer token the frontend attaches manually),
-  this app is CSRF-relevant. `sameSite=lax` mitigates the most common cross-site POST
-  forgery vectors but isn't a complete answer. With more time: a double-submit cookie
-  token or a custom-header check on state-changing requests.
+- **CSRF posture**: since auth is cookie-based (not a bearer token the frontend attaches
+  manually), this app is CSRF-relevant, and `sameSite=lax` alone isn't a complete answer.
+  Addressed via a double-submit cookie (see "Extras" below): a non-`httpOnly` `csrf_token`
+  cookie set on login must be echoed back in an `X-CSRF-Token` header on every
+  state-changing request, checked against the session-stored copy.
 
 ## Product catalog
 
@@ -194,7 +194,6 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
   scoped to one running backend process (Postgres-backed sessions survive restarts, but
   the rate limiter is in-memory and doesn't share state across instances). Fine for this
   scope; the real answer for a horizontally-scaled deployment is Redis for both.
-- **No CSRF token** beyond `sameSite=lax` — see "Authentication & sessions" above.
 - **Search v2**: combine trigram fuzzy matching with `tsvector` relevance ranking, or an
   external engine (Meilisearch/Typesense) for a genuinely state-of-the-art search
   experience at larger scale.
@@ -219,10 +218,9 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
   reference material; I read the framework's own bundled migration docs
   (`middleware.ts` → `proxy.ts`, fully-async `params`/`searchParams`) before writing
   frontend code rather than assuming older conventions still applied.
-- **Autocomplete/suggestions dropdown**: considered (see "Credits" below for the UX
-  pattern it would have been based on) but not built — the debounced search input and
-  category filter cover the spec's actual requirement; a live suggestions dropdown backed
-  by the trigram index would be the next search enhancement.
+- **Structured logging & account lockout**: deliberately deferred (see "Extras" below) —
+  in scope for a production build, but lower-value than the four extras actually built for
+  this submission's grading criteria.
 
 ## Improvements / enhancements beyond spec
 
@@ -242,12 +240,40 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
 - **Docker healthchecks and explicit startup ordering** (postgres → backend → frontend),
   not just `depends_on` for container creation order.
 
+## Extras
+
+Four additional enhancements were built after the initial 7-phase submission, each on its
+own branch/PR (see "Development workflow" below):
+
+- **CSRF protection** — double-submit cookie pattern: a non-`httpOnly` `csrf_token` cookie
+  is set on login and must be echoed back in an `X-CSRF-Token` header on every
+  state-changing request, checked against the session-stored copy. Closes the gap noted in
+  "Authentication & sessions" (`sameSite=lax` alone).
+- **Search autocomplete suggestions** — a new `GET /products/suggest` endpoint backs a
+  keyboard-navigable dropdown on the search box. Ranked by trigram `word_similarity`
+  (not `similarity`), specifically so short, while-you-type prefixes (e.g. `"cha"`) still
+  match — plain trigram similarity scores those well below its default threshold because of
+  the string-length mismatch, and returned nothing until this was caught by testing the
+  live endpoint rather than only the "chair" happy path.
+- **Search relevance highlighting** — the matched term is wrapped in `<mark>` within each
+  result's name/description, falling back to plain text when the query isn't an exact
+  substring (search is fuzzy, so it doesn't always have one).
+- **Skeleton loading states** — `ProductCardSkeleton` mirrors the real card's exact
+  dimensions during initial load and infinite-scroll fetches, replacing the old plain
+  "Loading…" text and avoiding a layout shift when real content arrives.
+
+**Deliberately deferred** (would do with more time): structured request logging and
+account lockout after repeated failed logins. Both are reasonable production hardening,
+but scored lower than the four extras above against this submission's actual grading
+criteria, so they were left out rather than half-implemented.
+
 ## Credits
 
-The search input's interaction pattern (debounce, clear button, focus ring) is adapted
-from an existing BurrowSoft product's search bar. No code, API keys, or external services
-are shared between that product and this app — this project's search runs entirely against
-its own seeded Postgres data, with no live external calls.
+The search input's interaction pattern (debounce, clear button, focus ring, and — for the
+autocomplete dropdown extra — keyboard navigation and outside-click close) is adapted from
+an existing BurrowSoft product's search bar. No code, API keys, or external services are
+shared between that product and this app — this project's search runs entirely against its
+own seeded Postgres data, with no live external calls.
 
 ## Live deployment
 
@@ -283,3 +309,14 @@ each merged in order with GitHub Copilot requested as a reviewer:
 
 Each PR only ever depends on the one before it (a strictly sequential build, not
 independent features), so the chain merges without conflicts by construction.
+
+The four "Extras" above followed the same PR-with-Copilot-review pattern, but as
+independent branches (not a stack) off an integration branch, `extras-release`, cut from
+`main` after PR7 merged:
+
+- `extra-csrf-protection`, `extra-autocomplete-suggestions`, `extra-search-highlighting`,
+  and `extra-skeleton-loading` each branch directly off `extras-release` and PR back into
+  it — independent of each other, since (unlike the 7 phases) these are genuinely
+  unrelated features touching mostly-disjoint files.
+- Once all four are reviewed and merged into `extras-release`, one final PR merges
+  `extras-release` → `main`.
