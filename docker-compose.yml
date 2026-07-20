@@ -60,6 +60,10 @@ services:
         # Must be the browser-reachable URL (published host port), never the
         # internal Docker service name — see frontend/Dockerfile for why.
         NEXT_PUBLIC_API_URL: http://localhost:${BACKEND_PORT:-4000}
+        # Gates the visible search extras — see README "Extras" -> "Feature
+        # flag". Must be passed as a build arg (not just set in .env) since
+        # NEXT_PUBLIC_* vars are inlined at build time, not read at runtime.
+        NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS: ${NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS:-true}
     restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
