@@ -14,8 +14,9 @@ export function highlightMatches(text: string, query: string): ReactNode {
   const parts = text.split(new RegExp(`(${escaped})`, "gi"));
   if (parts.length === 1) return text;
 
+  const lowerTrimmed = trimmed.toLowerCase();
   return parts.map((part, i) =>
-    part.toLowerCase() === trimmed.toLowerCase() ? (
+    part.toLowerCase() === lowerTrimmed ? (
       <mark key={i} className="rounded bg-amber-200 text-inherit dark:bg-amber-700/60">
         {part}
       </mark>
