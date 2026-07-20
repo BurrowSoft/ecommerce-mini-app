@@ -59,6 +59,13 @@ test.describe.serial("catalog app", () => {
     await expect(page.locator("h3").first()).toBeVisible();
   });
 
+  test("highlights the matched search term within result names", async () => {
+    // Search box already holds "chair" from the previous test.
+    const marks = page.locator("h3 mark");
+    await expect(marks.first()).toBeVisible();
+    await expect(marks.first()).toHaveText(/chair/i);
+  });
+
   test("clearing search and filtering by category updates the list", async () => {
     await page.click('button[aria-label="Clear search"]');
     await page.selectOption('select[aria-label="Filter by category"]', { label: "Books" });
