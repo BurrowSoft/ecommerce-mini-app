@@ -12,8 +12,14 @@ export class ApiError extends Error {
 }
 
 function readCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
-  return match ? decodeURIComponent(match[1]) : null;
+  for (const cookie of document.cookie.split(";")) {
+    const separatorIndex = cookie.indexOf("=");
+    if (separatorIndex === -1) continue;
+    if (cookie.slice(0, separatorIndex).trim() === name) {
+      return decodeURIComponent(cookie.slice(separatorIndex + 1));
+    }
+  }
+  return null;
 }
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
