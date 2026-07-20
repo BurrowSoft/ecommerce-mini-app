@@ -1,0 +1,41 @@
+# --- Internal planning docs (not part of the submission) ---
+PLAN.md
+SELFNOTE_PLAN.md
+EXTRAS_PLAN.md
+
+# --- Node / TypeScript ---
+node_modules/
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+coverage/
+
+# --- Prisma generated client (regenerated via `prisma generate`) ---
+generated/
+
+# --- Env / secrets ---
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# --- Logs ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- Postgres local data volume (if bind-mounted instead of named volume) ---
+pgdata/
