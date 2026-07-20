@@ -1,9 +1,12 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
+// Using the classic prisma-client-js generator (default node_modules/@prisma/client
+// output) rather than the newer prisma-client generator: the latter's ESM-flavored
+// output threw "ReferenceError: exports is not defined" under our standard NestJS
+// CommonJS build. This is the long-established, unambiguous integration path.
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
