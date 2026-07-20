@@ -22,7 +22,14 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
-      NODE_ENV: ${NODE_ENV:-production}
+      # Fallback defaults to "development", not "production": the session
+      # cookie's `secure` flag is tied to this (see backend/src/setup-app.ts),
+      # and this stack runs over plain http://localhost. If someone forgets
+      # to copy .env.example to .env, "production" here would silently break
+      # login (browser won't send a secure cookie over http) instead of
+      # failing safe. Set it explicitly to "production" only once real HTTPS
+      # is in front of this stack.
+      NODE_ENV: ${NODE_ENV:-development}
       BACKEND_PORT: 4000
       SESSION_SECRET: ${SESSION_SECRET}
       SESSION_INACTIVITY_TIMEOUT_SECONDS: ${SESSION_INACTIVITY_TIMEOUT_SECONDS:-3600}

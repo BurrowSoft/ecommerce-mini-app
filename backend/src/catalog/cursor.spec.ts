@@ -86,4 +86,19 @@ describe('cursor encode/decode', () => {
       position: 0,
     });
   });
+
+  it("restarts from the beginning rather than accepting a negative search offset", () => {
+    // A negative offset reaching SQL as `OFFSET -10` would be a Postgres
+    // error (500), not the graceful degradation this function guarantees.
+    const negative = encodeCursor({ mode: "search", offset: -10 });
+    expect(decodeCursor(negative, "search")).toEqual({ mode: "search", offset: 0 });
+  });
+
+  it("restarts from the beginning rather than accepting a negative browse lastId/position", () => {
+    const negativeLastId = encodeCursor({ mode: "browse", lastId: -1, position: 5 });
+    expect(decodeCursor(negativeLastId, "browse")).toEqual({ mode: "browse", lastId: 0, position: 0 });
+
+    const negativePosition = encodeCursor({ mode: "browse", lastId: 5, position: -1 });
+    expect(decodeCursor(negativePosition, "browse")).toEqual({ mode: "browse", lastId: 0, position: 0 });
+  });
 });

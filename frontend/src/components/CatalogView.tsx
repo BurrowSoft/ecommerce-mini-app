@@ -98,8 +98,12 @@ export function CatalogView() {
     if (lastVisibleIndex >= items.length - PREFETCH_THRESHOLD) {
       loadMore();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastVisibleIndex, items.length]);
+    // loadMore is intentionally a dependency (not suppressed): omitting it let
+    // this effect run with a stale closure — e.g. switching category/query
+    // without items.length happening to change in the same tick would keep
+    // using the previous filter's loadMore. loadMore's own internal guard
+    // (loading/hasMore/initialLoad) makes the extra re-invocations harmless.
+  }, [lastVisibleIndex, items.length, loadMore]);
 
   async function handleLogout() {
     try {
