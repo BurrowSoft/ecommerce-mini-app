@@ -163,7 +163,7 @@ export function CatalogView() {
                 className="absolute left-0 top-0 w-full px-4 py-1.5"
                 style={{ transform: `translateY(${virtualRow.start}px)`, height: virtualRow.size }}
               >
-                <ProductCard product={items[virtualRow.index]} />
+                <ProductCard product={items[virtualRow.index]} highlightQuery={query} />
               </div>
             ))}
           </div>
