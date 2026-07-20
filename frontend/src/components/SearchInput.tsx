@@ -19,6 +19,10 @@ export function SearchInput({
   const [activeIndex, setActiveIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guards against out-of-order responses: a slower request for an older,
+  // shorter query can otherwise resolve after a newer one and overwrite its
+  // (more relevant) suggestions.
+  const requestIdRef = useRef(0);
 
   // Fetch suggestions with their own (faster) debounce, independent of the
   // parent's search-submit debounce. All setState calls are deferred into
@@ -29,12 +33,18 @@ export function SearchInput({
     const trimmed = value.trim();
     debounceRef.current = setTimeout(() => {
       if (trimmed.length < 2) {
+        requestIdRef.current += 1;
         setSuggestions([]);
         return;
       }
+      const requestId = ++requestIdRef.current;
       getSuggestions(trimmed)
-        .then(setSuggestions)
-        .catch(() => setSuggestions([]));
+        .then((results) => {
+          if (requestId === requestIdRef.current) setSuggestions(results);
+        })
+        .catch(() => {
+          if (requestId === requestIdRef.current) setSuggestions([]);
+        });
     }, 200);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -104,6 +114,7 @@ export function SearchInput({
         aria-autocomplete="list"
         aria-expanded={showDropdown}
         aria-controls="search-suggestions-listbox"
+        aria-activedescendant={activeIndex >= 0 ? `search-suggestion-${activeIndex}` : undefined}
         autoComplete="off"
         className="w-full rounded-lg border border-zinc-300 bg-white py-2 pl-9 pr-9 text-sm text-zinc-900 outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
       />
@@ -132,10 +143,11 @@ export function SearchInput({
           {suggestions.map((suggestion, i) => (
             <button
               key={suggestion}
+              id={`search-suggestion-${i}`}
               type="button"
               role="option"
               aria-selected={i === activeIndex}
-              onMouseDown={() => selectSuggestion(suggestion)}
+              onClick={() => selectSuggestion(suggestion)}
               onMouseEnter={() => setActiveIndex(i)}
               className={`flex w-full items-center px-3 py-2 text-left text-sm transition-colors ${
                 i === activeIndex

@@ -55,7 +55,6 @@ test.describe.serial("catalog app", () => {
   test("autocomplete dropdown suggests matches and keyboard selection fills the search box", async () => {
     const input = page.locator('input[aria-label="Search products"]');
     await input.fill("cha");
-    await page.waitForTimeout(500); // suggestion debounce + fetch
 
     const listbox = page.locator("#search-suggestions-listbox");
     await expect(listbox).toBeVisible();

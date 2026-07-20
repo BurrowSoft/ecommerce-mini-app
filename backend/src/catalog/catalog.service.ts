@@ -190,7 +190,7 @@ export class CatalogService {
       SELECT DISTINCT name, word_similarity(${trimmed}, name) AS wsim
       FROM products
       WHERE "isSponsored" = false AND ${trimmed} <% name
-      ORDER BY wsim DESC
+      ORDER BY wsim DESC, name ASC
       LIMIT 8
     `;
 
