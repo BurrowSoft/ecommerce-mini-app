@@ -167,4 +167,33 @@ export class CatalogService {
 
     return { items: organic.map((r) => toDto(r, false)), nextCursor };
   }
+
+  /**
+   * Autocomplete suggestions for the search box — distinct organic product
+   * names, trigram-ranked, capped at 8. UX pattern (debounce, keyboard nav,
+   * empty-state fallback) adapted from an existing BurrowSoft product's
+   * search bar — see README "Credits"; this endpoint itself is entirely
+   * self-contained against our own data, no external calls.
+   */
+  async suggest(term: string): Promise<string[]> {
+    const trimmed = term.trim();
+    if (trimmed.length < 2) return [];
+
+    // word_similarity + <% (not similarity + %) because this is a
+    // while-you-type prefix match: a 2-3 char prefix like "cha" has to
+    // match "Ergonomic Chair" against just the "Chair" word, and plain
+    // trigram similarity() scores that far below its 0.3 default
+    // threshold (whole-string length mismatch), returning nothing.
+    const rows = await this.prisma.$queryRaw<
+      Array<{ name: string; wsim: number }>
+    >`
+      SELECT DISTINCT name, word_similarity(${trimmed}, name) AS wsim
+      FROM products
+      WHERE "isSponsored" = false AND ${trimmed} <% name
+      ORDER BY wsim DESC
+      LIMIT 8
+    `;
+
+    return rows.map((r) => r.name);
+  }
 }

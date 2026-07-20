@@ -52,6 +52,26 @@ test.describe.serial("catalog app", () => {
     await expect(page.locator("text=Sponsored").first()).toBeVisible();
   });
 
+  test("autocomplete dropdown suggests matches and keyboard selection fills the search box", async () => {
+    const input = page.locator('input[aria-label="Search products"]');
+    await input.fill("cha");
+    await page.waitForTimeout(500); // suggestion debounce + fetch
+
+    const listbox = page.locator("#search-suggestions-listbox");
+    await expect(listbox).toBeVisible();
+    const options = listbox.locator('[role="option"]');
+    await expect(options.first()).toBeVisible();
+
+    await input.press("ArrowDown");
+    await input.press("Enter");
+
+    await expect(listbox).toBeHidden();
+    const filled = await input.inputValue();
+    expect(filled.length).toBeGreaterThan(0);
+
+    await page.click('button[aria-label="Clear search"]');
+  });
+
   test("search filters results and hides sponsored items entirely", async () => {
     await page.fill('input[aria-label="Search products"]', "chair");
     await page.waitForTimeout(500); // debounce + fetch
