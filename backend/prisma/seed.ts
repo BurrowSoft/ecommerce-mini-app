@@ -73,8 +73,11 @@ async function seedUsers() {
 
 async function seedProducts() {
   // Fake catalog data is fully regenerable, so a clean wipe-and-reload each
-  // run keeps this idempotent without needing per-row upsert logic.
-  await prisma.product.deleteMany();
+  // run keeps this idempotent without needing per-row upsert logic. TRUNCATE
+  // + RESTART IDENTITY (not deleteMany) so ids restart at 1 each time — this
+  // runs on every container start (see Dockerfile), and deleteMany alone
+  // would leave the id sequence growing forever across restarts.
+  await prisma.$executeRaw`TRUNCATE TABLE products RESTART IDENTITY`;
 
   faker.seed(42); // reproducible dataset across runs/machines
 
