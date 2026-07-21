@@ -19,12 +19,25 @@ export async function buildApp(): Promise<{
   return { app, sessionPool };
 }
 
-export function extractCookie(res: request.Response): string {
+function setCookieHeaders(res: request.Response): string[] {
   const setCookie = res.headers['set-cookie'] as string[] | string | undefined;
-  const cookies: string[] = Array.isArray(setCookie)
-    ? setCookie
-    : [setCookie ?? ''];
-  const sidCookie = cookies.find((c) => c.startsWith('connect.sid='));
+  return Array.isArray(setCookie) ? setCookie : [setCookie ?? ''];
+}
+
+export function extractCookie(res: request.Response): string {
+  const sidCookie = setCookieHeaders(res).find((c) =>
+    c.startsWith('connect.sid='),
+  );
   if (!sidCookie) throw new Error('No session cookie in response');
   return sidCookie.split(';')[0];
+}
+
+/** Returns just the value of a named cookie set on this response (e.g. 'csrf_token'). */
+export function extractCookieValue(
+  res: request.Response,
+  name: string,
+): string {
+  const cookie = setCookieHeaders(res).find((c) => c.startsWith(`${name}=`));
+  if (!cookie) throw new Error(`No ${name} cookie in response`);
+  return cookie.split(';')[0].slice(name.length + 1);
 }

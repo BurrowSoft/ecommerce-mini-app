@@ -145,11 +145,17 @@ describe('LoginRateLimiterService', () => {
     }
   });
 
-  it("evicts stale keys via periodic sweep, bounding memory regardless of how many distinct keys were ever seen", () => {
+  it('evicts stale keys via periodic sweep, bounding memory regardless of how many distinct keys were ever seen', () => {
     jest.useFakeTimers();
     try {
-      const limiter = makeLimiter({ ipMax: 100, ipWindowSeconds: 1, accountMax: 100, accountWindowSeconds: 1 });
-      const hitsByKey = () => (limiter as unknown as { hitsByKey: Map<string, number[]> }).hitsByKey;
+      const limiter = makeLimiter({
+        ipMax: 100,
+        ipWindowSeconds: 1,
+        accountMax: 100,
+        accountWindowSeconds: 1,
+      });
+      const hitsByKey = () =>
+        (limiter as unknown as { hitsByKey: Map<string, number[]> }).hitsByKey;
 
       // Simulate an attacker (or just heavy traffic) rotating through many
       // one-off IPs/emails — each used only once.

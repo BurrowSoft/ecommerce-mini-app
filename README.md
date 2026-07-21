@@ -94,11 +94,11 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
   `bcrypt.compare` against a fixed hash, so it takes roughly as long as a wrong-password
   attempt against a real account — the response time itself doesn't leak account
   existence.
-- **CSRF posture**: not implemented, and worth naming explicitly rather than leaving
-  silent. Since auth is cookie-based (not a bearer token the frontend attaches manually),
-  this app is CSRF-relevant. `sameSite=lax` mitigates the most common cross-site POST
-  forgery vectors but isn't a complete answer. With more time: a double-submit cookie
-  token or a custom-header check on state-changing requests.
+- **CSRF posture**: since auth is cookie-based (not a bearer token the frontend attaches
+  manually), this app is CSRF-relevant, and `sameSite=lax` alone isn't a complete answer.
+  Addressed via a double-submit cookie (see "Extras" below): a non-`httpOnly` `csrf_token`
+  cookie set on login must be echoed back in an `X-CSRF-Token` header on every
+  state-changing request, checked against the session-stored copy.
 
 ## Product catalog
 
@@ -168,18 +168,29 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
 
 ## Testing strategy
 
-- **Backend**: 30 unit tests (pure functions — sponsored-slot math, cursor encoding,
-  rate limiter, session guard, credential validation — each independently verified before
-  being wired into the endpoints that use them) + 20 e2e tests (real HTTP requests via
-  `supertest` against the actual NestJS app and a real Postgres connection: full login/
-  session/rate-limit/logout flows, and full catalog pagination/filter/search/sponsored-
-  slot behavior). Run with `cd backend && npm test && npm run test:e2e`.
-- **Frontend**: one Playwright e2e spec (`frontend/e2e/app.spec.ts`, 8 tests) driving a
-  real headless Chromium against the real dev servers + seeded DB: unauthenticated
-  redirect, wrong-credentials error state, successful login, sponsored item rendering,
-  search hiding sponsored items, category filtering, infinite scroll staying DOM-bounded
-  (virtualization), and logout revoking access. Run with `cd frontend && npm run
-  test:e2e` (frontend + backend + seeded DB must already be running).
+- **Backend**: 40 unit tests (pure functions — sponsored-slot math, cursor encoding,
+  rate limiter, session guard, credential validation, the CSRF guard — each independently
+  verified before being wired into the endpoints that use them) + 28 e2e tests (real HTTP
+  requests via `supertest` against the actual NestJS app and a real Postgres connection:
+  full login/session/rate-limit/logout/CSRF flows, and full catalog pagination/filter/
+  search/sponsored-slot/suggest behavior). Run with `cd backend && npm test && npm run
+  test:e2e`.
+- **Frontend**: two Playwright specs driving a real headless Chromium against the real dev
+  servers + seeded DB:
+  - `app.spec.ts` (11 tests, one shared-page journey): unauthenticated redirect,
+    wrong-credentials error state, successful login, sponsored item rendering, the
+    autocomplete dropdown (keyboard selection), search hiding sponsored items + highlighting
+    the matched term, category filtering, infinite scroll staying DOM-bounded
+    (virtualization), skeleton placeholders during a deliberately-delayed initial load, and
+    logout revoking access.
+  - `feature-flag-disabled.spec.ts` (1 test, **skipped by default**): asserts the pre-extras
+    fallback UI (no combobox ARIA, no suggestion dropdown, no highlighting) when
+    `NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS=false` — only runs against a dev server actually
+    started with that flag off, since `NEXT_PUBLIC_*` values are inlined at build/start
+    time and can't be toggled per-test against an already-running server; see "Extras" →
+    "Feature flag" for the exact command.
+  - Run with `cd frontend && npm run test:e2e` (frontend + backend + seeded DB must already
+    be running).
   - **Why Playwright e2e over a Jest/RTL component-test harness**: no component-test setup
     existed yet, and every bug this build actually hit was integration-shaped — a CSS
     layout interaction breaking virtualization, a cookie-lifecycle bug in logout — not
@@ -194,7 +205,6 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
   scoped to one running backend process (Postgres-backed sessions survive restarts, but
   the rate limiter is in-memory and doesn't share state across instances). Fine for this
   scope; the real answer for a horizontally-scaled deployment is Redis for both.
-- **No CSRF token** beyond `sameSite=lax` — see "Authentication & sessions" above.
 - **Search v2**: combine trigram fuzzy matching with `tsvector` relevance ranking, or an
   external engine (Meilisearch/Typesense) for a genuinely state-of-the-art search
   experience at larger scale.
@@ -219,10 +229,24 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
   reference material; I read the framework's own bundled migration docs
   (`middleware.ts` → `proxy.ts`, fully-async `params`/`searchParams`) before writing
   frontend code rather than assuming older conventions still applied.
-- **Autocomplete/suggestions dropdown**: considered (see "Credits" below for the UX
-  pattern it would have been based on) but not built — the debounced search input and
-  category filter cover the spec's actual requirement; a live suggestions dropdown backed
-  by the trigram index would be the next search enhancement.
+- **Structured logging & account lockout**: deliberately deferred (see "Extras" below) —
+  in scope for a production build, but lower-value than the four extras actually built for
+  this submission's grading criteria.
+- **`/products/suggest` has no endpoint-specific rate limit**: like `/products`, it's
+  behind the session guard only — no per-IP/per-account throttle of its own the way
+  `/auth/login` has. It's a high-frequency, fire-on-every-keystroke endpoint (mitigated
+  client-side by a 200ms debounce, but that's not a server-side guarantee), so a
+  misbehaving or malicious client could still hammer it. A real build would give it a
+  lighter, higher-ceiling rate limit of its own rather than relying solely on the client
+  debounce.
+- **The search-extras feature flag is build-time only, not a runtime toggle**: since
+  `NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS` is inlined into the frontend bundle at build/dev-server
+  start (see "Extras" → "Feature flag"), flipping it means restarting the dev server or
+  rebuilding the Docker image — there's no way to toggle it for a subset of live traffic
+  without a redeploy. A proper flag service (LaunchDarkly, GrowthBook, a homegrown
+  DB-backed flag) would allow instant, per-request toggling and gradual rollout; this
+  implementation is the simplest thing that satisfies "default on, can be turned off,"
+  not a general-purpose flagging system.
 
 ## Improvements / enhancements beyond spec
 
@@ -242,12 +266,63 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
 - **Docker healthchecks and explicit startup ordering** (postgres → backend → frontend),
   not just `depends_on` for container creation order.
 
+## Extras
+
+Four additional enhancements were built after the initial 7-phase submission, each on its
+own branch/PR (see "Development workflow" below):
+
+- **CSRF protection** — double-submit cookie pattern: a non-`httpOnly` `csrf_token` cookie
+  is set on login and must be echoed back in an `X-CSRF-Token` header on every
+  state-changing request, checked against the session-stored copy. Closes the gap noted in
+  "Authentication & sessions" (`sameSite=lax` alone).
+- **Search autocomplete suggestions** — a new `GET /products/suggest` endpoint backs a
+  keyboard-navigable dropdown on the search box. Ranked by trigram `word_similarity`
+  (not `similarity`), specifically so short, while-you-type prefixes (e.g. `"cha"`) still
+  match — plain trigram similarity scores those well below its default threshold because of
+  the string-length mismatch, and returned nothing until this was caught by testing the
+  live endpoint rather than only the "chair" happy path.
+- **Search relevance highlighting** — the matched term is wrapped in `<mark>` within each
+  result's name/description, falling back to plain text when the query isn't an exact
+  substring (search is fuzzy, so it doesn't always have one).
+- **Skeleton loading states** — `ProductCardSkeleton` mirrors the real card's exact
+  dimensions during initial load and infinite-scroll fetches, replacing the old plain
+  "Loading…" text and avoiding a layout shift when real content arrives.
+
+**Deliberately deferred** (would do with more time): structured request logging and
+account lockout after repeated failed logins. Both are reasonable production hardening,
+but scored lower than the four extras above against this submission's actual grading
+criteria, so they were left out rather than half-implemented.
+
+### Feature flag
+
+The three *visible* extras — autocomplete suggestions, search relevance highlighting, and
+skeleton loading states — are gated behind a single flag,
+`NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS`, **defaulting to `true`** (any value other than the
+literal string `"false"` counts as enabled; see `.env.example`). Disabled, the app falls
+back to the original, pre-extras UI: a plain search input with no dropdown or highlighting,
+and `"Loading…"` text instead of skeleton cards.
+
+**How to disable it depends on how you're running the app**, because `NEXT_PUBLIC_*`
+values are inlined into the client bundle at build time, not read at runtime (same caveat
+as `NEXT_PUBLIC_API_URL` above):
+
+- **Local dev server** (`npm run dev`): set `NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS=false` and
+  restart — picked up immediately, no rebuild needed.
+- **Docker Compose**: set it in `.env`, then `docker compose up --build` (a plain `up`
+  without `--build` reuses the already-built image and won't see the change) —
+  `docker-compose.yml` passes it through as a build arg to `frontend/Dockerfile`.
+
+CSRF protection is deliberately **not** behind this flag. It's a security fix, not a UX
+toggle — shipping a build where it can be switched off would be a regression, not a demo
+convenience — so it stays enabled unconditionally regardless of this setting.
+
 ## Credits
 
-The search input's interaction pattern (debounce, clear button, focus ring) is adapted
-from an existing BurrowSoft product's search bar. No code, API keys, or external services
-are shared between that product and this app — this project's search runs entirely against
-its own seeded Postgres data, with no live external calls.
+The search input's interaction pattern (debounce, clear button, focus ring, and — for the
+autocomplete dropdown extra — keyboard navigation and outside-click close) is adapted from
+an existing BurrowSoft product's search bar. No code, API keys, or external services are
+shared between that product and this app — this project's search runs entirely against its
+own seeded Postgres data, with no live external calls.
 
 ## Live deployment
 
@@ -283,3 +358,14 @@ each merged in order with GitHub Copilot requested as a reviewer:
 
 Each PR only ever depends on the one before it (a strictly sequential build, not
 independent features), so the chain merges without conflicts by construction.
+
+The four "Extras" above followed the same PR-with-Copilot-review pattern, but as
+independent branches (not a stack) off an integration branch, `extras-release`, cut from
+`main` after PR7 merged:
+
+- `extra-csrf-protection`, `extra-autocomplete-suggestions`, `extra-search-highlighting`,
+  and `extra-skeleton-loading` each branch directly off `extras-release` and PR back into
+  it — independent of each other, since (unlike the 7 phases) these are genuinely
+  unrelated features touching mostly-disjoint files.
+- Once all four are reviewed and merged into `extras-release`, one final PR merges
+  `extras-release` → `main`.

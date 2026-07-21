@@ -11,12 +11,31 @@ export class ApiError extends Error {
   }
 }
 
+function readCookie(name: string): string | null {
+  for (const cookie of document.cookie.split(";")) {
+    const separatorIndex = cookie.indexOf("=");
+    if (separatorIndex === -1) continue;
+    if (cookie.slice(0, separatorIndex).trim() === name) {
+      return decodeURIComponent(cookie.slice(separatorIndex + 1));
+    }
+  }
+  return null;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  // Double-submit CSRF token: the backend issues a readable csrf_token
+  // cookie on login and expects it echoed back as this header on any
+  // state-changing request. GET/HEAD are never CSRF-protected, so skip the
+  // lookup for those (and it's simply absent before login anyway).
+  const method = (init?.method ?? "GET").toUpperCase();
+  const csrfToken = method !== "GET" && method !== "HEAD" ? readCookie("csrf_token") : null;
+
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
       ...init?.headers,
     },
   });
@@ -83,4 +102,11 @@ export function getProducts(params: GetProductsParams): Promise<ProductListRespo
   if (params.q) search.set("q", params.q);
 
   return apiFetch<ProductListResponse>(`/products?${search.toString()}`);
+}
+
+export async function getSuggestions(q: string): Promise<string[]> {
+  const res = await apiFetch<{ suggestions: string[] }>(
+    `/products/suggest?q=${encodeURIComponent(q)}`,
+  );
+  return res.suggestions;
 }

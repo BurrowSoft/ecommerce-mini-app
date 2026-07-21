@@ -12,6 +12,11 @@ WORKDIR /app
 # browser runs outside the compose network entirely.
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Same inlining caveat applies here — gates the visible search extras (see
+# README "Extras" -> "Feature flag"); must be a build arg, not a runtime env
+# var, or toggling .env alone silently does nothing to the built image.
+ARG NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS=true
+ENV NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS=$NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

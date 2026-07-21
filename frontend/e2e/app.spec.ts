@@ -3,6 +3,28 @@ import { test, expect, Page } from "@playwright/test";
 const DEMO_EMAIL = process.env.SEED_DEMO_USER_EMAIL ?? "demo@example.com";
 const DEMO_PASSWORD = process.env.SEED_DEMO_USER_PASSWORD ?? "ChangeMe123!";
 
+// Separate, one-off test with its own page: needs to delay the /products
+// response to reliably observe the skeleton state, which would be flaky to
+// splice into the shared-page journey below (real network calls there are
+// normally fast enough that the skeleton is only up for a frame or two).
+test("shows skeleton placeholders while the initial product page is loading", async ({ page }) => {
+  await page.route("**/products?*", async (route) => {
+    await new Promise((r) => setTimeout(r, 800));
+    await route.continue();
+  });
+
+  await page.goto("/login");
+  await page.fill("#email", DEMO_EMAIL);
+  await page.fill("#password", DEMO_PASSWORD);
+  await page.click("button[type=submit]");
+  await page.waitForURL((url) => url.pathname === "/");
+
+  const skeletonRegion = page.locator('[role="status"][aria-label="Loading products"]');
+  await expect(skeletonRegion).toBeVisible();
+  await expect(skeletonRegion).toBeHidden({ timeout: 5000 });
+  await expect(page.locator("h3").first()).toBeVisible();
+});
+
 // Assumes: frontend dev server + backend + a seeded Postgres are all running
 // (see README "Running the e2e tests"). Serial + a single shared page: this
 // flow is one continuous user journey (logged-out -> wrong creds -> logged
@@ -52,11 +74,37 @@ test.describe.serial("catalog app", () => {
     await expect(page.locator("text=Sponsored").first()).toBeVisible();
   });
 
+  test("autocomplete dropdown suggests matches and keyboard selection fills the search box", async () => {
+    const input = page.locator('input[aria-label="Search products"]');
+    await input.fill("cha");
+
+    const listbox = page.locator("#search-suggestions-listbox");
+    await expect(listbox).toBeVisible();
+    const options = listbox.locator('[role="option"]');
+    await expect(options.first()).toBeVisible();
+
+    await input.press("ArrowDown");
+    await input.press("Enter");
+
+    await expect(listbox).toBeHidden();
+    const filled = await input.inputValue();
+    expect(filled.length).toBeGreaterThan(0);
+
+    await page.click('button[aria-label="Clear search"]');
+  });
+
   test("search filters results and hides sponsored items entirely", async () => {
     await page.fill('input[aria-label="Search products"]', "chair");
     await page.waitForTimeout(500); // debounce + fetch
     await expect(page.locator("text=Sponsored")).toHaveCount(0);
     await expect(page.locator("h3").first()).toBeVisible();
+  });
+
+  test("highlights the matched search term within result names", async () => {
+    // Search box already holds "chair" from the previous test.
+    const marks = page.locator("h3 mark");
+    await expect(marks.first()).toBeVisible();
+    await expect(marks.first()).toHaveText(/chair/i);
   });
 
   test("clearing search and filtering by category updates the list", async () => {

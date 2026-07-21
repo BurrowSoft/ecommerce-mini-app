@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import {
   Body,
   Controller,
@@ -14,7 +15,23 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { LoginRateLimiterService } from './login-rate-limiter.service';
 import { SessionAuthGuard } from './guards/session-auth.guard';
+import { CsrfGuard } from './guards/csrf.guard';
 import { CurrentUserId } from './current-user.decorator';
+
+const CSRF_COOKIE = 'csrf_token';
+
+function setCsrfCookie(req: Request, res: Response): void {
+  const token = randomBytes(32).toString('hex');
+  req.session.csrfToken = token;
+  // Deliberately NOT httpOnly — the frontend must be able to read this via
+  // document.cookie to echo it back as the X-CSRF-Token header. Its value
+  // alone reveals nothing without the corresponding session cookie.
+  res.cookie(CSRF_COOKIE, token, {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  });
+}
 
 function regenerateSession(req: Request): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -75,6 +92,7 @@ export class AuthController {
     await regenerateSession(req);
     req.session.userId = user.id;
     req.session.lastSeenAt = Date.now();
+    setCsrfCookie(req, res);
     await saveSession(req);
 
     return { email: user.email };
@@ -82,7 +100,7 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(200)
-  @UseGuards(SessionAuthGuard)
+  @UseGuards(SessionAuthGuard, CsrfGuard)
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await destroySession(req);
     // session.destroy() only removes the server-side session record — it
@@ -91,6 +109,7 @@ export class AuthController {
     // fooled the frontend's proxy.ts cookie-presence check into thinking
     // the user was still logged in until the next API call 401'd.
     res.clearCookie('connect.sid');
+    res.clearCookie(CSRF_COOKIE);
     return { message: 'Logged out' };
   }
 

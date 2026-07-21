@@ -1,7 +1,14 @@
 import { ProductListItem } from "@/lib/api";
+import { highlightMatches } from "@/lib/highlight";
 import { swatchColor } from "@/lib/swatch-color";
 
-export function ProductCard({ product }: { product: ProductListItem }) {
+export function ProductCard({
+  product,
+  highlightQuery = "",
+}: {
+  product: ProductListItem;
+  highlightQuery?: string;
+}) {
   return (
     <div
       className={`flex h-full items-center gap-4 rounded-xl border bg-white p-4 dark:bg-zinc-900 ${
@@ -21,7 +28,7 @@ export function ProductCard({ product }: { product: ProductListItem }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h3 className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-50">
-            {product.name}
+            {highlightMatches(product.name, highlightQuery)}
           </h3>
           {product.isSponsored && (
             <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-900 dark:text-amber-200">
@@ -29,7 +36,9 @@ export function ProductCard({ product }: { product: ProductListItem }) {
             </span>
           )}
         </div>
-        <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{product.description}</p>
+        <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+          {highlightMatches(product.description, highlightQuery)}
+        </p>
         <p className="mt-1 text-[11px] text-zinc-400 dark:text-zinc-500">{product.category}</p>
       </div>
 

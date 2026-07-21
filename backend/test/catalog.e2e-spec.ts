@@ -184,4 +184,58 @@ describe('Catalog (e2e)', () => {
     const overlap = body(page2).items.filter((i) => page1Ids.has(i.id));
     expect(overlap).toHaveLength(0);
   });
+
+  describe('GET /products/suggest', () => {
+    it('rejects unauthenticated requests', () => {
+      return request(app.getHttpServer())
+        .get('/products/suggest?q=chair')
+        .expect(401);
+    });
+
+    it('returns distinct, non-empty suggestions for a real term', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/products/suggest?q=chair')
+        .set('Cookie', cookie)
+        .expect(200);
+
+      const { suggestions } = res.body as { suggestions: string[] };
+      expect(suggestions.length).toBeGreaterThan(0);
+      expect(suggestions.length).toBeLessThanOrEqual(8);
+      expect(new Set(suggestions).size).toBe(suggestions.length);
+    });
+
+    it('returns an empty array for a query shorter than 2 characters', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/products/suggest?q=a')
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(res.body).toEqual({ suggestions: [] });
+    });
+
+    it('returns an empty array when q is omitted entirely', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/products/suggest')
+        .set('Cookie', cookie)
+        .expect(200);
+      expect(res.body).toEqual({ suggestions: [] });
+    });
+
+    it('never includes sponsored items', async () => {
+      // Sanity check via the main endpoint: every suggested name for a broad
+      // term should be reachable as an organic (non-sponsored) product.
+      const res = await request(app.getHttpServer())
+        .get('/products/suggest?q=chair')
+        .set('Cookie', cookie)
+        .expect(200);
+      const { suggestions } = res.body as { suggestions: string[] };
+
+      for (const name of suggestions) {
+        const match = await request(app.getHttpServer())
+          .get(`/products?limit=50&q=${encodeURIComponent(name)}`)
+          .set('Cookie', cookie)
+          .expect(200);
+        expect(body(match).items.every((i) => !i.isSponsored)).toBe(true);
+      }
+    });
+  });
 });
