@@ -168,18 +168,29 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
 
 ## Testing strategy
 
-- **Backend**: 30 unit tests (pure functions — sponsored-slot math, cursor encoding,
-  rate limiter, session guard, credential validation — each independently verified before
-  being wired into the endpoints that use them) + 20 e2e tests (real HTTP requests via
-  `supertest` against the actual NestJS app and a real Postgres connection: full login/
-  session/rate-limit/logout flows, and full catalog pagination/filter/search/sponsored-
-  slot behavior). Run with `cd backend && npm test && npm run test:e2e`.
-- **Frontend**: one Playwright e2e spec (`frontend/e2e/app.spec.ts`, 8 tests) driving a
-  real headless Chromium against the real dev servers + seeded DB: unauthenticated
-  redirect, wrong-credentials error state, successful login, sponsored item rendering,
-  search hiding sponsored items, category filtering, infinite scroll staying DOM-bounded
-  (virtualization), and logout revoking access. Run with `cd frontend && npm run
-  test:e2e` (frontend + backend + seeded DB must already be running).
+- **Backend**: 40 unit tests (pure functions — sponsored-slot math, cursor encoding,
+  rate limiter, session guard, credential validation, the CSRF guard — each independently
+  verified before being wired into the endpoints that use them) + 28 e2e tests (real HTTP
+  requests via `supertest` against the actual NestJS app and a real Postgres connection:
+  full login/session/rate-limit/logout/CSRF flows, and full catalog pagination/filter/
+  search/sponsored-slot/suggest behavior). Run with `cd backend && npm test && npm run
+  test:e2e`.
+- **Frontend**: two Playwright specs driving a real headless Chromium against the real dev
+  servers + seeded DB:
+  - `app.spec.ts` (11 tests, one shared-page journey): unauthenticated redirect,
+    wrong-credentials error state, successful login, sponsored item rendering, the
+    autocomplete dropdown (keyboard selection), search hiding sponsored items + highlighting
+    the matched term, category filtering, infinite scroll staying DOM-bounded
+    (virtualization), skeleton placeholders during a deliberately-delayed initial load, and
+    logout revoking access.
+  - `feature-flag-disabled.spec.ts` (1 test, **skipped by default**): asserts the pre-extras
+    fallback UI (no combobox ARIA, no suggestion dropdown, no highlighting) when
+    `NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS=false` — only runs against a dev server actually
+    started with that flag off, since `NEXT_PUBLIC_*` values are inlined at build/start
+    time and can't be toggled per-test against an already-running server; see "Extras" →
+    "Feature flag" for the exact command.
+  - Run with `cd frontend && npm run test:e2e` (frontend + backend + seeded DB must already
+    be running).
   - **Why Playwright e2e over a Jest/RTL component-test harness**: no component-test setup
     existed yet, and every bug this build actually hit was integration-shaped — a CSS
     layout interaction breaking virtualization, a cookie-lifecycle bug in logout — not
@@ -221,6 +232,21 @@ overview, detailed auth sequence, and the Docker Compose deployment topology.
 - **Structured logging & account lockout**: deliberately deferred (see "Extras" below) —
   in scope for a production build, but lower-value than the four extras actually built for
   this submission's grading criteria.
+- **`/products/suggest` has no endpoint-specific rate limit**: like `/products`, it's
+  behind the session guard only — no per-IP/per-account throttle of its own the way
+  `/auth/login` has. It's a high-frequency, fire-on-every-keystroke endpoint (mitigated
+  client-side by a 200ms debounce, but that's not a server-side guarantee), so a
+  misbehaving or malicious client could still hammer it. A real build would give it a
+  lighter, higher-ceiling rate limit of its own rather than relying solely on the client
+  debounce.
+- **The search-extras feature flag is build-time only, not a runtime toggle**: since
+  `NEXT_PUBLIC_ENABLE_SEARCH_EXTRAS` is inlined into the frontend bundle at build/dev-server
+  start (see "Extras" → "Feature flag"), flipping it means restarting the dev server or
+  rebuilding the Docker image — there's no way to toggle it for a subset of live traffic
+  without a redeploy. A proper flag service (LaunchDarkly, GrowthBook, a homegrown
+  DB-backed flag) would allow instant, per-request toggling and gradual rollout; this
+  implementation is the simplest thing that satisfies "default on, can be turned off,"
+  not a general-purpose flagging system.
 
 ## Improvements / enhancements beyond spec
 

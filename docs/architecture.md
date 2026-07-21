@@ -10,8 +10,9 @@ flowchart LR
 
     subgraph Backend["NestJS API"]
         AuthC["Auth Controller\nPOST /auth/login, /auth/logout, GET /auth/me"]
-        CatalogC["Catalog Controller\nGET /products"]
+        CatalogC["Catalog Controller\nGET /products, GET /products/suggest"]
         SessionGuard["Session Guard\n(validates cookie, checks\ninactivity, refreshes lastSeenAt)"]
+        CsrfGuard["CSRF Guard\n(double-submit cookie:\nX-CSRF-Token header must\nmatch session-stored token)"]
         RateLimiter["Login Rate Limiter\n(self-authored, in-memory:\nper-IP + per-account)"]
     end
 
@@ -25,14 +26,20 @@ flowchart LR
     RateLimiter --> AuthC
     AuthC -- "bcrypt verify" --> Users
     AuthC -- "create session" --> Sessions
-    AuthC -- "Set-Cookie: connect.sid\n(httpOnly, sameSite=lax)" --> UI
+    AuthC -- "Set-Cookie: connect.sid (httpOnly)\n+ csrf_token (readable)" --> UI
 
-    UI -- "2. GET /products?cursor=&q=&category=&limit=\nCookie: connect.sid" --> SessionGuard
+    UI -- "2. GET /products?cursor=&q=&category=&limit=\nGET /products/suggest?q=\nCookie: connect.sid" --> SessionGuard
     SessionGuard -- "validate + refresh lastSeenAt\n(401 + destroy if idle >1h)" --> Sessions
     SessionGuard --> CatalogC
-    CatalogC -- "keyset pagination (browse) /\ntrigram similarity (search),\ncategory filter" --> Products
+    CatalogC -- "keyset pagination (browse) /\ntrigram similarity (search) /\nword_similarity (suggest),\ncategory filter" --> Products
     CatalogC -- "interleave sponsored items\nby position (browse mode only)" --> Products
-    CatalogC -- "paginated JSON" --> UI
+    CatalogC -- "paginated JSON /\nsuggestion list" --> UI
+
+    UI -- "3. POST /auth/logout\nCookie: connect.sid\nX-CSRF-Token: (from csrf_token cookie)" --> SessionGuard
+    SessionGuard --> CsrfGuard
+    CsrfGuard -- "compare header vs\nsession-stored token" --> Sessions
+    CsrfGuard --> AuthC
+    AuthC -- "destroy session,\nclear both cookies" --> Sessions
 ```
 
 ## Auth flow (detail)
@@ -54,25 +61,31 @@ sequenceDiagram
             N-->>B: 401 (generic "Invalid email or password")
         else valid
             N->>N: regenerate session id (prevents session fixation)
-            N->>P: INSERT session row (connect-pg-simple),<br/>userId + lastSeenAt = now()
-            N-->>B: Set-Cookie: connect.sid=... (httpOnly); 200
+            N->>N: generate CSRF token, store on session
+            N->>P: INSERT session row (connect-pg-simple),<br/>userId + lastSeenAt = now() + csrfToken
+            N-->>B: Set-Cookie: connect.sid=... (httpOnly)<br/>+ csrf_token=... (readable by JS); 200
         end
     end
 
-    B->>N: GET /products (Cookie: connect.sid=...)
+    B->>N: GET /products or /products/suggest (Cookie: connect.sid=...)
     N->>P: SELECT session WHERE sid = ?
     alt no session / expired (now - lastSeenAt > 1h)
         N->>P: DELETE session row
         N-->>B: 401 (session expired, please log in again)
     else valid session
         N->>P: UPDATE session SET lastSeenAt = now()
-        N->>P: query products (cursor/search/filter)
-        N-->>B: 200 + paginated products
+        N->>P: query products (cursor/search/filter)<br/>or suggest (word_similarity)
+        N-->>B: 200 + paginated products / suggestion list
     end
 
-    B->>N: POST /auth/logout (Cookie: connect.sid=...)
-    N->>P: DELETE session row
-    N-->>B: clear cookie (res.clearCookie); 200
+    B->>N: POST /auth/logout<br/>Cookie: connect.sid=...<br/>Header: X-CSRF-Token=... (read from csrf_token cookie)
+    N->>N: compare X-CSRF-Token header<br/>vs session-stored csrfToken
+    alt mismatch or missing
+        N-->>B: 403 Forbidden (invalid or missing CSRF token)
+    else match
+        N->>P: DELETE session row
+        N-->>B: clear both cookies (res.clearCookie); 200
+    end
 ```
 
 ## Deployment topology (Docker Compose)
